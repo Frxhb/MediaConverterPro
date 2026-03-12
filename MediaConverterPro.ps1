@@ -1,0 +1,3746 @@
+<#
+.SYNOPSIS
+    Media Converter Pro 1.0 - A powerful media conversion, editing, and downloading tool built with PowerShell and WPF.
+.DESCRIPTION
+    This script provides a GUI for ffmpeg, ffprobe, yt-dlp, and upscayl. It allows batch processing,
+    queuing, downloading from various sites, and AI-based audio transcription/image upscaling.
+#>
+
+# ==============================================================================
+# 1. APPLICATION INITIALIZATION & WINDOWS API SETUP
+# ==============================================================================
+
+# C# Code to import kernel32 and user32 functions. 
+# This hides the background PowerShell console window securely.
+$hideConsoleCode = @'
+using System;
+using System.Runtime.InteropServices;
+public class ConsoleHelper {
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetConsoleWindow();
+    
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    
+    public static void HideConsole() {
+        IntPtr hWnd = GetConsoleWindow();
+        if (hWnd != IntPtr.Zero) {
+            ShowWindow(hWnd, 0); // 0 = SW_HIDE
+        }
+    }
+}
+'@
+if (-not ("ConsoleHelper" -as [type])) {
+    Add-Type -TypeDefinition $hideConsoleCode
+}
+[ConsoleHelper]::HideConsole()
+
+# C# Code to bypass User Interface Privilege Isolation (UIPI) if running as Admin.
+# This ensures Drag & Drop functionality works even if the script is elevated.
+$code = @'
+[DllImport("user32.dll")]
+public static extern bool ChangeWindowMessageFilterEx(IntPtr hWnd, uint msg, uint action, IntPtr pAttributes);
+'@
+if (-not ("WinApi.WinApiDragDrop" -as [type])) {
+    $winApi = Add-Type -MemberDefinition $code -Name "WinApiDragDrop" -Namespace WinApi -PassThru
+}
+else {
+    $winApi = [WinApi.WinApiDragDrop]
+}
+$WM_DROPFILES = 0x233
+$WM_COPYDATA = 0x004A
+$WM_COPYGLOBALDATA = 0x0049
+$MSGFLT_ALLOW = 1
+
+# Apply the message filter to the current process main window handle
+$handle = (Get-Process -Id $pid).MainWindowHandle
+[void]$winApi::ChangeWindowMessageFilterEx($handle, $WM_DROPFILES, $MSGFLT_ALLOW, [IntPtr]::Zero)
+[void]$winApi::ChangeWindowMessageFilterEx($handle, $WM_COPYDATA, $MSGFLT_ALLOW, [IntPtr]::Zero)
+[void]$winApi::ChangeWindowMessageFilterEx($handle, $WM_COPYGLOBALDATA, $MSGFLT_ALLOW, [IntPtr]::Zero)
+
+# Determine the directory where this script resides to establish a working path
+if ($MyInvocation.MyCommand.Path) {
+    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+else {
+    $ScriptDir = [System.IO.Path]::GetDirectoryName([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
+}
+if ([string]::IsNullOrWhiteSpace($ScriptDir)) { $ScriptDir = $PWD.Path }
+
+# Define relative paths for configuration and log files
+$ConfigDir = Join-Path $ScriptDir "config"
+$LogDir = Join-Path $ScriptDir "logs"
+
+# Create directories if they do not exist
+foreach ($dir in @($ConfigDir, $LogDir)) {
+    if (-not (Test-Path $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+}
+
+# Define file paths for app configuration, presets, queue state, and logs
+$PresetFile = Join-Path $ConfigDir "mcp_presets.json"
+$ConfigFile = Join-Path $ConfigDir "mcp_config.json"
+$QueueFile = Join-Path $ConfigDir "mcp_queue.json"
+$CrashLog = Join-Path $LogDir "crash.log"
+$ConvertLog = Join-Path $LogDir "convert.log"
+
+# Helper functions for logging application events and errors
+function Write-CrashLog { param([string]$Message); Add-Content -Path $CrashLog -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] ERROR: $Message" }
+function Write-ConvertLog { param([string]$Message); Add-Content -Path $ConvertLog -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message" }
+
+# Function to generate a unique filename to prevent overwriting existing files
+function Get-UniqueFileName ([string]$FilePath) {
+    $dir = [System.IO.Path]::GetDirectoryName($FilePath)
+    $name = [System.IO.Path]::GetFileNameWithoutExtension($FilePath)
+    $ext = [System.IO.Path]::GetExtension($FilePath)
+    $newPath = $FilePath
+    $counter = 1
+    
+    while (Test-Path -LiteralPath $newPath) {
+        $newPath = Join-Path $dir "$name ($counter)$ext"
+        $counter++
+    }
+    return $newPath
+}
+
+# ==============================================================================
+# 2. MAIN APPLICATION LOGIC & STATE MANAGEMENT
+# ==============================================================================
+try {
+    # Set console encoding to UTF8 to handle special characters in paths/logs
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $ErrorActionPreference = "Continue" 
+    
+    # Load required .NET assemblies for WPF and Windows Forms
+    Add-Type -AssemblyName PresentationFramework, System.Windows.Forms, System.Drawing, Microsoft.VisualBasic
+
+    # Global state object to track the active job queue, tool paths, and live log status
+    $script:State = @{
+        ffmpeg              = "ffmpeg.exe"
+        ffprobe             = "ffprobe.exe"
+        ytdlp               = "yt-dlp.exe"
+        upscayl             = ""
+        ffmpegFound         = $false
+        ffprobeFound        = $false
+        ytdlpFound          = $false
+        jsRuntimeFound      = $false
+        upscaylFound        = $false
+        BatchQueue          = @()
+        CurrentJobIndex     = 0
+        p                   = $null # Active background process
+        totalDuration       = 0     # For progress bar calculation
+        lastOutDir          = ""
+        tempLog             = Join-Path $env:TEMP "mcp_live.log"
+        tempLogErr          = Join-Path $env:TEMP "mcp_live_err.log"
+        lastLogPos          = 0
+        SupportedSitesCache = $null
+    }
+
+    # Function to locate all required third-party tools on the host system
+    function Find-Tools {
+        $script:State.ffmpegFound = $false
+        $script:State.ffprobeFound = $false
+        $script:State.ytdlpFound = $false
+        $script:State.jsRuntimeFound = $false
+        $script:State.upscaylFound = $false
+        $script:isWinGetVersion = $false
+
+        # Ensure environment path is fresh
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+        # Check for system-installed yt-dlp (specifically WinGet/WindowsApps)
+        $sysCheck = Get-Command "yt-dlp.exe" -ErrorAction SilentlyContinue
+        if ($sysCheck) {
+            if ($sysCheck.Source -match "WinGet" -or $sysCheck.Source -match "WindowsApps") {
+                $script:State.ytdlp = $sysCheck.Source
+                $script:State.ytdlpFound = $true
+                $script:isWinGetVersion = $true
+            }
+        }
+
+        # Fallback check in standard WinGet link folder
+        if (-not $script:isWinGetVersion) {
+            $winGetLinkPath = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links\yt-dlp.exe"
+            if (Test-Path $winGetLinkPath) {
+                $script:State.ytdlp = $winGetLinkPath
+                $script:State.ytdlpFound = $true
+                $script:isWinGetVersion = $true
+            }
+        }
+
+        # Locate ffmpeg and ffprobe globally
+        $sysFfmpeg = Get-Command "ffmpeg.exe" -ErrorAction SilentlyContinue
+        if ($sysFfmpeg) { 
+            $script:State.ffmpeg = $sysFfmpeg.Source
+            $script:State.ffmpegFound = $true 
+        }
+
+        $sysFfprobe = Get-Command "ffprobe.exe" -ErrorAction SilentlyContinue
+        if ($sysFfprobe) { 
+            $script:State.ffprobe = $sysFfprobe.Source
+            $script:State.ffprobeFound = $true 
+        }
+        
+        # Check for JavaScript runtime (required by yt-dlp to bypass some protections)
+        if ((Get-Command "node.exe" -ErrorAction SilentlyContinue) -or (Get-Command "deno.exe" -ErrorAction SilentlyContinue)) { 
+            $script:State.jsRuntimeFound = $true 
+        }
+
+        # Look for local executables in the script directory if system ones fail
+        if (-not $script:isWinGetVersion) {
+            $localY = Join-Path $ScriptDir "yt-dlp.exe"
+            if (Test-Path $localY) {
+                $script:State.ytdlp = $localY
+                $script:State.ytdlpFound = $true
+            }
+        }
+    
+        if (-not $script:State.ffmpegFound -and (Test-Path (Join-Path $ScriptDir "ffmpeg.exe"))) {
+            $script:State.ffmpeg = Join-Path $ScriptDir "ffmpeg.exe"
+            $script:State.ffmpegFound = $true
+        }
+        if (-not $script:State.ffprobeFound -and (Test-Path (Join-Path $ScriptDir "ffprobe.exe"))) {
+            $script:State.ffprobe = Join-Path $ScriptDir "ffprobe.exe"
+            $script:State.ffprobeFound = $true
+        }
+        
+        # Attempt to locate the Upscayl binary (AI Image Upscaling)
+        $script:State.upscaylFound = $false
+        $script:State.upscayl = ""
+        $script:State.upscaylModels = ""
+        $script:State.upscaylWorkDir = ""
+
+        # Common installation paths for Upscayl
+        $uPaths = @(
+            (Join-Path $env:LOCALAPPDATA "Programs\upscayl\resources\bin\upscayl-bin.exe"),
+            (Join-Path $env:LOCALAPPDATA "Programs\Upscayl\resources\bin\upscayl-bin.exe"),
+            (Join-Path $env:ProgramFiles "upscayl\resources\bin\upscayl-bin.exe"),
+            (Join-Path $env:ProgramFiles "Upscayl\resources\bin\upscayl-bin.exe"),
+            (Join-Path $ScriptDir "realesrgan\realesrgan-ncnn-vulkan.exe")
+        )
+
+        # Loop through possible Upscayl paths and bind model directories if found
+        foreach ($p in $uPaths) {
+            if (Test-Path -LiteralPath $p) {
+                $script:State.upscaylFound = $true
+                $script:State.upscayl = $p
+                
+                $workDir = Split-Path $p -Parent
+                $m1 = Join-Path $workDir "models"
+                $m2 = Join-Path (Split-Path $workDir -Parent) "models"
+                $m3 = Join-Path (Split-Path (Split-Path $workDir -Parent) -Parent) "models"
+
+                if (Test-Path -LiteralPath $m1) { $script:State.upscaylModels = $m1; $script:State.upscaylWorkDir = $workDir }
+                elseif (Test-Path -LiteralPath $m2) { $script:State.upscaylModels = $m2; $script:State.upscaylWorkDir = (Split-Path $workDir -Parent) }
+                elseif (Test-Path -LiteralPath $m3) { $script:State.upscaylModels = $m3; $script:State.upscaylWorkDir = (Split-Path (Split-Path $workDir -Parent) -Parent) }
+                
+                break
+            }
+        }
+
+        # Automatically clean up yt-dlp cache on startup to avoid stale session data
+        if ($script:State.ytdlpFound) {
+            [void](Start-Process -FilePath $script:State.ytdlp -ArgumentList "--rm-cache-dir" -WindowStyle Hidden)
+        }
+    }
+    
+    # Run the tool finder
+    Find-Tools
+
+    # ==============================================================================
+    # 3. CONFIGURATION MANAGEMENT
+    # ==============================================================================
+    
+    # Load configuration from JSON or define defaults
+    $DefaultConfig = @{ Theme = "Light"; WhisperModel = "base"; PlaySound = $true; AlwaysOnTop = $false; ThreadLimit = "Auto"; DefaultOutDir = ""; AutoDelete = $false }
+    if (Test-Path $ConfigFile) { try { $Config = Get-Content $ConfigFile | ConvertFrom-Json } catch { $Config = $DefaultConfig } } else { $Config = $DefaultConfig }
+    
+    # Check and append missing properties to support backwards compatibility of config files
+    if ($null -eq $Config.WhisperModel) { $Config | Add-Member -MemberType NoteProperty -Name "WhisperModel" -Value "base" }
+    if ($null -eq $Config.PlaySound) { $Config | Add-Member -MemberType NoteProperty -Name "PlaySound" -Value $true }
+    if ($null -eq $Config.AlwaysOnTop) { $Config | Add-Member -MemberType NoteProperty -Name "AlwaysOnTop" -Value $false }
+    if ($null -eq $Config.ThreadLimit) { $Config | Add-Member -MemberType NoteProperty -Name "ThreadLimit" -Value "Auto" }
+    if ($null -eq $Config.DefaultOutDir) { $Config | Add-Member -MemberType NoteProperty -Name "DefaultOutDir" -Value "" }
+    if ($null -eq $Config.AutoDelete) { $Config | Add-Member -MemberType NoteProperty -Name "AutoDelete" -Value $false }
+
+    # ==============================================================================
+    # 4. WPF UI DEFINITION (XAML)
+    # ==============================================================================
+    
+    [xml]$xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Media Converter Pro v1.0" Width="1200" Height="1000" MinWidth="900" MinHeight="800" WindowStartupLocation="CenterScreen" Background="{DynamicResource BgBrush}" AllowDrop="True" FontFamily="Segoe UI">
+    <Window.TaskbarItemInfo>
+        <TaskbarItemInfo x:Name="TaskbarProgress" ProgressState="None"/>
+    </Window.TaskbarItemInfo>
+    <Window.Resources>
+        <SolidColorBrush x:Key="BgBrush" Color="#0F172A"/>
+        <SolidColorBrush x:Key="CardBrush" Color="#1E293B"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#F8FAFC"/>
+        <SolidColorBrush x:Key="MutedBrush" Color="#94A3B8"/>
+        <SolidColorBrush x:Key="BorderBrush" Color="#334155"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#6366F1"/>
+        <SolidColorBrush x:Key="InputBgBrush" Color="#0F172A"/>
+        <SolidColorBrush x:Key="DragBrush" Color="#1E1B4B"/>
+
+        <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/></Style>
+        
+        <Style TargetType="TabItem">
+            <Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="Padding" Value="20,12"/><Setter Property="FontSize" Value="15"/><Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="BorderThickness" Value="0"/><Setter Property="Margin" Value="0,0,5,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Border" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter x:Name="ContentSite" VerticalAlignment="Center" HorizontalAlignment="Center" ContentSource="Header" Margin="15,8"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource BorderBrush}"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SubTabStyle" TargetType="TabItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Border" Background="{TemplateBinding Background}" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Margin="0,0,5,10">
+                            <ContentPresenter ContentSource="Header" Margin="15,6" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource BorderBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <Style TargetType="MenuItem">
+            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Background" Value="{DynamicResource InputBgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Padding" Value="5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border CornerRadius="4" Background="{TemplateBinding Background}" Margin="2">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="{DynamicResource InputBgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="8"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource InputBgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,5"/>
+        </Style>
+
+        <Style TargetType="TextBox"><Setter Property="Background" Value="{DynamicResource InputBgBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="8"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="0"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ListBox"><Setter Property="Background" Value="{DynamicResource InputBgBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBox">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                            <ScrollViewer Focusable="false" Padding="{TemplateBinding Padding}">
+                                <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                            </ScrollViewer>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <Style TargetType="CheckBox"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
+        <Style TargetType="Border"><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/></Style>
+        
+        <Style TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    
+    <Grid Margin="20">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,20">
+            <StackPanel>
+                <TextBlock Text="Media Converter Pro" Foreground="{DynamicResource AccentBrush}" FontSize="32" FontWeight="Black"/>
+                <TextBlock x:Name="TxtSubtitle" Text="Open Source Media Editor, Converter and Downloader" Foreground="{DynamicResource MutedBrush}" FontSize="14" Margin="0,2,0,0"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                <Button x:Name="BtnUpdate" Content="Update Tools" Width="110" Height="40" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" Margin="0,0,10,0" ToolTip="Update Dependencies"/>
+                <Button x:Name="BtnSettings" Content="Settings" Width="90" Height="40" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" ToolTip="Settings"/>
+            </StackPanel>
+        </Grid>
+        
+        <TabControl x:Name="MainTabs" Grid.Row="1" Background="{DynamicResource CardBrush}" BorderBrush="Transparent" BorderThickness="0" Padding="0">
+            
+            <TabItem x:Name="TabAudio">
+                <TabItem.Header>
+                    <TextBlock Text="Audio" ToolTip="Convert, extract, and normalize audio files" />
+                </TabItem.Header>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
+                    <StackPanel>
+                        <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,15">
+                            <StackPanel>
+                                <TextBlock Text="Queue (Drag and Drop here)" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+                                    <ListBox x:Name="A_InList" Height="100" AllowDrop="True" SelectionMode="Extended">
+                                        <ListBox.ContextMenu>
+                                            <ContextMenu x:Name="A_CtxMenu">
+                                                <MenuItem x:Name="A_CtxRemove" Header="Remove Selected"/>
+                                                <MenuItem x:Name="A_CtxClear" Header="Clear All"/>
+                                            </ContextMenu>
+                                        </ListBox.ContextMenu>
+                                    </ListBox>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <Button x:Name="A_BtnAdd" Content="+ Files" Height="45" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="0,0,0,10"/>
+                                        <Button x:Name="A_BtnClear" Content="Clear" Height="45" Background="#EF4444" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    </StackPanel>
+                                    <Button x:Name="A_BtnInfo" Grid.Column="2" Content="Info" Margin="10,0,0,0" Background="{DynamicResource MutedBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Height="45" VerticalAlignment="Top"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="A_OutDir" ToolTip="The folder where processed files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow"/>
+                                    <Button x:Name="A_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TabControl Background="Transparent" BorderThickness="0">
+                            <TabItem Style="{StaticResource SubTabStyle}">
+                                <TabItem.Header><TextBlock Text="Encoding Settings"/></TabItem.Header>
+                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                                        <StackPanel Grid.Row="0" Margin="10"><TextBlock Text="Format" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="A_CFormat" SelectedIndex="0"><ComboBoxItem>MP3</ComboBoxItem><ComboBoxItem>M4A</ComboBoxItem><ComboBoxItem>WAV</ComboBoxItem><ComboBoxItem>FLAC</ComboBoxItem></ComboBox></StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="10"><TextBlock Text="Quality (Bitrate)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="A_CQual" SelectedIndex="2"><ComboBoxItem>128k</ComboBoxItem><ComboBoxItem>192k</ComboBoxItem><ComboBoxItem>320k</ComboBoxItem><ComboBoxItem>Lossless</ComboBoxItem></ComboBox></StackPanel>
+                                        <StackPanel Grid.Row="1" Margin="10"><TextBlock Text="Channels" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="A_CChan" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>Mono</ComboBoxItem><ComboBoxItem>Stereo</ComboBoxItem></ComboBox></StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Margin="10"><TextBlock Text="Metadata" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="A_CMeta" SelectedIndex="0"><ComboBoxItem>Keep</ComboBoxItem><ComboBoxItem>Remove</ComboBoxItem></ComboBox></StackPanel>
+                                    </Grid>
+                                </Border>
+                            </TabItem>
+                            
+                            <TabItem Style="{StaticResource SubTabStyle}">
+                                <TabItem.Header><TextBlock Text="Filters &amp; Advanced"/></TabItem.Header>
+                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Margin="10">
+                                                <TextBlock Text="Trim (Format: 00:00:00)" FontSize="13" Foreground="#EF4444" Margin="0,0,0,5"/>
+                                                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBox x:Name="A_TrimStart" Margin="0,0,5,0" Text="00:00:00"/><TextBox x:Name="A_TrimEnd" Grid.Column="1" Text="00:00:00"/></Grid>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Margin="10">
+                                                <CheckBox x:Name="A_CheckNorm" Content="Normalize Audio (R128)" Margin="0,5,0,10" FontWeight="Bold"/>
+                                                <CheckBox x:Name="A_CheckExtract" Content="Extract Audio from Video (.mp4, .mkv)" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <StackPanel Margin="10,20,10,0">
+                                            <CheckBox x:Name="A_CheckCustomParams" Content="Add custom FFmpeg params (Live Preview)" FontWeight="Bold"/>
+                                            <StackPanel x:Name="A_CustomParamsPanel" Visibility="Collapsed" Margin="0,15,0,0">
+                                                <TextBlock Text="Final FFmpeg command preview:" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                <TextBox x:Name="A_ParamsPreview" IsReadOnly="True" TextWrapping="Wrap" Background="#0F172A" Foreground="#10B981" FontFamily="Consolas" FontSize="13" Padding="12" Margin="0,0,0,10" MinHeight="60"/>
+                                                <TextBlock Text="Add extra arguments (e.g. -af volume=2.0):" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                <TextBox x:Name="A_CustomParams"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </TabItem>
+                        </TabControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="TabVideo">
+                <TabItem.Header>
+                    <TextBlock Text="Video" ToolTip="Convert, compress, and optimize video files" />
+                </TabItem.Header>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
+                    <StackPanel>
+                        <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,15">
+                            <StackPanel>
+                                <TextBlock Text="Queue (Drag and Drop here)" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+                                    <ListBox x:Name="V_InList" Height="100" AllowDrop="True" SelectionMode="Extended">
+                                        <ListBox.ContextMenu>
+                                            <ContextMenu x:Name="V_CtxMenu">
+                                                <MenuItem x:Name="V_CtxRemove" Header="Remove Selected"/>
+                                                <MenuItem x:Name="V_CtxClear" Header="Clear All"/>
+                                            </ContextMenu>
+                                        </ListBox.ContextMenu>
+                                    </ListBox>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <Button x:Name="V_BtnAdd" Content="+ Files" Height="45" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="0,0,0,10"/>
+                                        <Button x:Name="V_BtnClear" Content="Clear" Height="45" Background="#EF4444" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    </StackPanel>
+                                    <Button x:Name="V_BtnInfo" Grid.Column="2" Content="Info" Margin="10,0,0,0" Background="{DynamicResource MutedBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Height="45" VerticalAlignment="Top"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="V_OutDir" ToolTip="The folder where processed files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow"/>
+                                    <Button x:Name="V_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TabControl Background="Transparent" BorderThickness="0">
+                            <TabItem Style="{StaticResource SubTabStyle}">
+                                <TabItem.Header><TextBlock Text="Encoding Options"/></TabItem.Header>
+                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                    <StackPanel>
+                                        <StackPanel Margin="10,0,10,15">
+                                            <TextBlock Text="Profile (Presets)" FontSize="13" Foreground="#8B5CF6" FontWeight="Bold" Margin="0,0,0,5"/>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
+                                                <ComboBox x:Name="V_Preset" SelectedIndex="0">
+                                                    <ComboBoxItem>Set Manually</ComboBoxItem>
+                                                    <ComboBoxItem>Standard MP4 (H.264, 1080p, CRF 23)</ComboBoxItem>
+                                                    <ComboBoxItem>WhatsApp / Web (720p, CRF 28)</ComboBoxItem>
+                                                </ComboBox>
+                                                <Button x:Name="V_BtnSavePreset" Grid.Column="1" Content="Save as Preset" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="10,0,0,0"/>
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                                            
+                                            <StackPanel Grid.Row="0" Margin="10"><TextBlock Text="Container Format" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CFormat" SelectedIndex="1"><ComboBoxItem>MP4</ComboBoxItem><ComboBoxItem>MKV</ComboBoxItem><ComboBoxItem>AVI</ComboBoxItem><ComboBoxItem>WEBM</ComboBoxItem><ComboBoxItem>GIF</ComboBoxItem></ComboBox></StackPanel>
+                                            <StackPanel Grid.Row="0" Grid.Column="1" Margin="10"><TextBlock Text="Hardware Acceleration" FontSize="13" Foreground="#10B981" FontWeight="Bold" Margin="0,0,0,5"/><ComboBox x:Name="V_CHWAccel" SelectedIndex="0"><ComboBoxItem>CPU (x264/x265/AV1)</ComboBoxItem><ComboBoxItem>NVIDIA GPU (NVENC)</ComboBoxItem><ComboBoxItem>AMD GPU (AMF)</ComboBoxItem><ComboBoxItem>Intel GPU (QSV)</ComboBoxItem></ComboBox></StackPanel>
+
+                                            <StackPanel Grid.Row="1" Margin="10"><TextBlock Text="Video Codec" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                <ComboBox x:Name="V_CCodec" SelectedIndex="0">
+                                                    <ComboBoxItem>H.264 (AVC)</ComboBoxItem>
+                                                    <ComboBoxItem>H.265 (HEVC)</ComboBoxItem>
+                                                    <ComboBoxItem>AV1 (Next-Gen)</ComboBoxItem>
+                                                    <ComboBoxItem>Copy (No Re-encoding)</ComboBoxItem>
+                                                </ComboBox>
+                                            </StackPanel>
+                                            <StackPanel Grid.Row="1" Grid.Column="1" Margin="10"><TextBlock Text="Audio Codec" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CAudio" SelectedIndex="0"><ComboBoxItem>AAC</ComboBoxItem><ComboBoxItem>AC3 (Dolby)</ComboBoxItem><ComboBoxItem>Copy</ComboBoxItem></ComboBox></StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </TabItem>
+
+                            <TabItem Style="{StaticResource SubTabStyle}">
+                                <TabItem.Header><TextBlock Text="Filters &amp; Editing"/></TabItem.Header>
+                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                                        
+                                        <StackPanel Grid.Row="0" Margin="10"><TextBlock Text="Resolution" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CRes" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>1080p (FHD)</ComboBoxItem><ComboBoxItem>720p (HD)</ComboBoxItem></ComboBox></StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="10"><TextBlock Text="Framerate (FPS)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                            <ComboBox x:Name="V_CFPS" SelectedIndex="0">
+                                                <ComboBoxItem>Original</ComboBoxItem>
+                                                <ComboBoxItem>60 FPS</ComboBoxItem>
+                                                <ComboBoxItem>30 FPS</ComboBoxItem>
+                                                <ComboBoxItem>24 FPS (Cinematic)</ComboBoxItem>
+                                            </ComboBox>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="1" Margin="10"><TextBlock Text="Audio Tracks (Multi-Track)" FontSize="13" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold" Margin="0,0,0,5"/><ComboBox x:Name="V_CAudioTracks" SelectedIndex="0"><ComboBoxItem>Default Only (Track 1)</ComboBoxItem><ComboBoxItem>Keep ALL Tracks &amp; Subs</ComboBoxItem></ComboBox></StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Margin="10"><TextBlock Text="Volume Booster" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CVol" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>Boost 150%</ComboBoxItem><ComboBoxItem>Normalize (EBU R128)</ComboBoxItem></ComboBox></StackPanel>
+
+                                        <StackPanel Grid.Row="2" Margin="10"><TextBlock Text="Video Speed" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CSpeed" SelectedIndex="0"><ComboBoxItem>Original (1.0x)</ComboBoxItem><ComboBoxItem>0.5x (Slow Motion)</ComboBoxItem><ComboBoxItem>1.25x (Fast)</ComboBoxItem><ComboBoxItem>1.5x (Faster)</ComboBoxItem><ComboBoxItem>2.0x (Very Fast)</ComboBoxItem></ComboBox></StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="1" Margin="10"><TextBlock Text="Audio Delay (Sec, e.g. 0.5 or -0.5)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><TextBox x:Name="V_AudioDelay" Text="0.0"/></StackPanel>
+
+                                        <StackPanel Grid.Row="3" Margin="10"><TextBlock Text="Burn Subtitles (.srt)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="V_SubPath" IsReadOnly="True"/><Button x:Name="V_BtnSub" Grid.Column="1" Content="..." Width="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="5,0,0,0"/></Grid>
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="3" Grid.Column="1" Margin="10">
+                                            <TextBlock Text="Trim (Format: 00:00:00)" FontSize="13" Foreground="#EF4444" Margin="0,0,0,5"/>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBox x:Name="V_TrimStart" Margin="0,0,5,0" Text="00:00:00"/><TextBox x:Name="V_TrimEnd" Grid.Column="1" Text="00:00:00"/></Grid>
+                                            <Button x:Name="V_BtnGenPreview" Content="Generate Visual Timeline" Margin="0,8,0,0" Height="28" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                            <ScrollViewer x:Name="V_PreviewScroll" Height="70" Visibility="Collapsed" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                                                <StackPanel x:Name="V_PreviewStack" Orientation="Horizontal"/>
+                                            </ScrollViewer>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </TabItem>
+
+                            <TabItem Style="{StaticResource SubTabStyle}">
+                                <TabItem.Header><TextBlock Text="Advanced Quality"/></TabItem.Header>
+                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                    <StackPanel>
+                                        <Border Margin="10,0,10,15" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="15" CornerRadius="6">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="100"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <CheckBox x:Name="V_CheckTargetSize" Content="Compress to exact target size (Overrides CRF): " VerticalAlignment="Center" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold"/>
+                                                <TextBox x:Name="V_TargetSizeMB" Grid.Column="1" Text="24.5" Margin="10,0,0,0" ToolTip="Target in MB (e.g. 24.5 for Discord)"/>
+                                                <TextBlock Grid.Column="2" Text="MB" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource MutedBrush}"/>
+                                            </Grid>
+                                        </Border>
+
+                                        <StackPanel Margin="10,0,10,15">
+                                            <TextBlock Text="Quality / CRF (Lower = Better, 23 = Default)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <Slider x:Name="V_SliderCRF" Minimum="0" Maximum="51" Value="23" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="V_CRFText" Grid.Column="1" Text="23" TextAlignment="Center" VerticalAlignment="Center" FontSize="15" FontWeight="Bold"/>
+                                                <TextBlock x:Name="V_CRFDesc" Grid.Column="2" Text="Balanced (Standard)" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}"/>
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <StackPanel Margin="10,5,10,0">
+                                            <CheckBox x:Name="V_CheckCustomParams" Content="Add custom FFmpeg params (Live Preview)" FontWeight="Bold"/>
+                                            <StackPanel x:Name="V_CustomParamsPanel" Visibility="Collapsed" Margin="0,15,0,0">
+                                                <TextBlock Text="Final FFmpeg command preview:" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                <TextBox x:Name="V_ParamsPreview" IsReadOnly="True" TextWrapping="Wrap" Background="#0F172A" Foreground="#10B981" FontFamily="Consolas" FontSize="13" Padding="12" Margin="0,0,0,10" MinHeight="60"/>
+                                                <TextBlock Text="Add extra arguments (e.g. -vf hue=s=0 -preset slow):" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                <TextBox x:Name="V_CustomParams"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </TabItem>
+
+                        </TabControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="TabImage">
+                <TabItem.Header>
+                    <TextBlock Text="Images" ToolTip="Convert, scale, and manage metadata for images" />
+                </TabItem.Header>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
+                    <StackPanel>
+                        <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,15">
+                            <StackPanel>
+                                <TextBlock Text="Queue (Drag and Drop here)" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+                                    <ListBox x:Name="I_InList" Height="100" AllowDrop="True" SelectionMode="Extended">
+                                        <ListBox.ContextMenu>
+                                            <ContextMenu x:Name="I_CtxMenu">
+                                                <MenuItem x:Name="I_CtxRemove" Header="Remove Selected"/>
+                                                <MenuItem x:Name="I_CtxClear" Header="Clear All"/>
+                                            </ContextMenu>
+                                        </ListBox.ContextMenu>
+                                    </ListBox>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <Button x:Name="I_BtnAdd" Content="+ Files" Height="45" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="0,0,0,10"/>
+                                        <Button x:Name="I_BtnClear" Content="Clear" Height="45" Background="#EF4444" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    </StackPanel>
+                                    <Button x:Name="I_BtnInfo" Grid.Column="2" Content="Info" Margin="10,0,0,0" Background="{DynamicResource MutedBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Height="45" VerticalAlignment="Top"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="I_OutDir" ToolTip="The folder where processed files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow"/>
+                                    <Button x:Name="I_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TabControl Background="Transparent" BorderThickness="0">
+                            <TabItem Style="{StaticResource SubTabStyle}">
+                                <TabItem.Header><TextBlock Text="Conversion"/></TabItem.Header>
+                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                                        <StackPanel Margin="10"><TextBlock Text="Format" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="I_CFormat" SelectedIndex="0"><ComboBoxItem>JPG</ComboBoxItem><ComboBoxItem>PNG</ComboBoxItem><ComboBoxItem>WEBP</ComboBoxItem><ComboBoxItem>ICO (Windows Icon)</ComboBoxItem><ComboBoxItem>HEIC</ComboBoxItem><ComboBoxItem>BMP</ComboBoxItem></ComboBox></StackPanel>
+                                        <StackPanel Grid.Column="1" Margin="10"><TextBlock Text="Quality (JPG/WEBP only)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="I_CQual" SelectedIndex="0"><ComboBoxItem>High (Default)</ComboBoxItem><ComboBoxItem>Medium</ComboBoxItem><ComboBoxItem>Low</ComboBoxItem></ComboBox></StackPanel>
+                                        <StackPanel Grid.Row="1" Margin="10"><TextBlock Text="Scaling" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="I_CRes" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>Max Width 1920px</ComboBoxItem><ComboBoxItem>Max Width 1280px</ComboBoxItem><ComboBoxItem>Max Width 800px</ComboBoxItem></ComboBox></StackPanel>
+                                        <CheckBox x:Name="I_CheckMeta" Grid.Row="1" Grid.Column="1" Content="Completely remove EXIF &amp; Metadata" Foreground="#EF4444" FontWeight="Bold" Margin="10,25,0,0"/>
+                                    </Grid>
+                                </Border>
+                            </TabItem>
+                        </TabControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="TabMuxing">
+                <TabItem.Header>
+                    <TextBlock Text="Muxing" ToolTip="Merge separate video and audio files instantly without re-encoding" />
+                </TabItem.Header>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
+                    <StackPanel>
+                        <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20">
+                            <StackPanel>
+                                <TextBlock Text="Merge Video &amp; Audio without re-encoding" Foreground="{DynamicResource AccentBrush}" FontSize="18" FontWeight="Bold" Margin="0,0,0,20"/>
+                                
+                                <TextBlock Text="1. Select video without audio (Drop file here)" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <Grid Margin="0,0,0,20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="M_InVideo" IsReadOnly="True"/><Button x:Name="M_BtnVid" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+
+                                <TextBlock Text="2. Select audio file (Drop file here)" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <Grid Margin="0,0,0,20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="M_InAudio" IsReadOnly="True"/><Button x:Name="M_BtnAud" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+
+                                <TextBlock Text="3. Save target as..." FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="M_OutFile" IsReadOnly="True" /><Button x:Name="M_BtnOut" Grid.Column="1" Content="Select" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="TabDownload">
+                <TabItem.Header>
+                    <TextBlock Text="Download" ToolTip="Download videos and audio from YouTube and supported sites" />
+                </TabItem.Header>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
+                    <StackPanel>
+                        <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,15">
+                            <StackPanel>
+                                <TextBlock Text="Web Video / Audio Link (YouTube, SoundCloud, etc.)" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="Y_Link" Text="https://" Height="45"/>
+                                    <Button x:Name="Y_BtnPreview" Grid.Column="1" Content="Fetch Video Info" Margin="10,0,0,0" Height="45" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                </Grid>
+                                
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="Y_OutDir" ToolTip="The folder where downloaded files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow"/>
+                                    <Button x:Name="Y_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <TabControl Background="Transparent" BorderThickness="0">
+                            <TabItem Style="{StaticResource SubTabStyle}">
+                                <TabItem.Header><TextBlock Text="Format &amp; Quality"/></TabItem.Header>
+                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,15">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <StackPanel Margin="10">
+                                                <TextBlock Text="Download Type" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                <ComboBox x:Name="Y_Type" SelectedIndex="0">
+                                                    <ComboBoxItem>Video</ComboBoxItem>
+                                                    <ComboBoxItem>Audio Only</ComboBoxItem>
+                                                </ComboBox>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Margin="10">
+                                                <TextBlock Text="Quality / Resolution" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                <ComboBox x:Name="Y_Res" SelectedIndex="0">
+                                                    <ComboBoxItem>Best Possible</ComboBoxItem>
+                                                    <ComboBoxItem>Max 1080p</ComboBoxItem>
+                                                    <ComboBoxItem>Max 720p</ComboBoxItem>
+                                                    <ComboBoxItem>Audio Only (Highest Quality)</ComboBoxItem>
+                                                </ComboBox>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <StackPanel Margin="10">
+                                                <TextBlock Text="Target Format (Video)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                <ComboBox x:Name="Y_VFormat" SelectedIndex="0">
+                                                    <ComboBoxItem>mp4</ComboBoxItem>
+                                                    <ComboBoxItem>mkv</ComboBoxItem>
+                                                    <ComboBoxItem>webm</ComboBoxItem>
+                                                </ComboBox>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Margin="10">
+                                                <TextBlock Text="Target Format (Audio)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                <ComboBox x:Name="Y_AFormat" SelectedIndex="0">
+                                                    <ComboBoxItem>mp3</ComboBoxItem>
+                                                    <ComboBoxItem>m4a</ComboBoxItem>
+                                                    <ComboBoxItem>flac</ComboBoxItem>
+                                                    <ComboBoxItem>wav</ComboBoxItem>
+                                                </ComboBox>
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </TabItem>
+
+                            <TabItem Style="{StaticResource SubTabStyle}">
+                                <TabItem.Header><TextBlock Text="Auth &amp; Advanced"/></TabItem.Header>
+                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                    <StackPanel>
+                                        <WrapPanel Margin="10,0,0,15">
+                                            <CheckBox x:Name="Y_CheckMeta" Content="Embed Metadata &amp; Thumbnail" Margin="0,0,20,15" IsChecked="False"/>
+                                            <CheckBox x:Name="Y_CheckSubs" Content="Embed Subtitles" Margin="0,0,20,15"/>
+                                            <CheckBox x:Name="Y_CheckSponsor" Content="SponsorBlock (Skip Sponsors)" Margin="0,0,20,15"/>
+                                            <CheckBox x:Name="Y_CheckCustomParams" Content="Add custom yt-dlp params (Live Preview)" Margin="0,0,20,15" IsChecked="False"/>
+                                        </WrapPanel>
+                                        
+                                        <StackPanel x:Name="Y_CustomParamsPanel" Visibility="Collapsed" Margin="10,0,10,20">
+                                            <TextBlock Text="Final yt-dlp command preview:" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                            <TextBox x:Name="Y_ParamsPreview" IsReadOnly="True" TextWrapping="Wrap" Background="#0F172A" Foreground="#10B981" FontFamily="Consolas" FontSize="13" Padding="12" Margin="0,0,0,10" MinHeight="60"/>
+                                            <TextBlock Text="Add extra arguments (e.g. --limit-rate 5M):" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                            <TextBox x:Name="Y_CustomParams"/>
+                                        </StackPanel>
+
+                                        <Grid Margin="10,0,10,15">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
+                                            <CheckBox x:Name="Y_CheckCookie" Content="Use Cookies: " VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                            <ComboBox x:Name="Y_CookieBrowser" Grid.Column="1" SelectedIndex="0" Width="100" Margin="0,0,15,0">
+                                                <ComboBoxItem>edge</ComboBoxItem>
+                                                <ComboBoxItem>chrome</ComboBoxItem>
+                                                <ComboBoxItem>firefox</ComboBoxItem>
+                                                <ComboBoxItem>opera</ComboBoxItem>
+                                                <ComboBoxItem>brave</ComboBoxItem>
+                                            </ComboBox>
+                                            <TextBox x:Name="Y_CookiePath" Grid.Column="2" Text="" ToolTip="Path to cookies.txt (Overrides Browser)" IsReadOnly="True" Cursor="Arrow"/>
+                                            <Button x:Name="Y_BtnCookie" Grid.Column="3" Content="Txt" Margin="10,0,0,0" Height="38" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" ToolTip="Select cookies.txt file manually"/>
+                                        </Grid>
+
+                                        <Grid Margin="10,10,10,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                            
+                                            <TextBlock Text="PO Token:" VerticalAlignment="Top" Margin="0,10,15,0" Foreground="{DynamicResource MutedBrush}" ToolTip="Proof of Origin Token (helps bypass bot blocks)"/>
+                                            <TextBox x:Name="Y_PoToken" Grid.Column="1" Height="60" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" ToolTip="Paste manual token here"/>
+                                            <CheckBox x:Name="Y_CheckAutoPoToken" Grid.Row="1" Grid.Column="1" Content="Auto-retrieve PO Token (Let yt-dlp handle it)" Margin="0,12,0,0" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </TabItem>
+                        </TabControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="TabSpecial">
+                <TabItem.Header>
+                    <TextBlock Text="Special" ToolTip="Advanced AI tools, repair utilities, and visualizers" />
+                </TabItem.Header>
+                <TabControl x:Name="SpecialSubTabs" Background="Transparent" BorderThickness="0" Margin="15">
+                    
+                    <TabItem Style="{StaticResource SubTabStyle}">
+                        <TabItem.Header><TextBlock Text="AI Transcriber"/></TabItem.Header>
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="8" Padding="20">
+                            <StackPanel>
+                                <TextBlock Text="AI Voice-to-Text (Whisper)" FontWeight="Bold" FontSize="18" Margin="0,0,0,15" Foreground="#8B5CF6"/>
+                                
+                                <TextBlock Text="1. Input Media (Drop file here)" FontSize="13" Margin="0,5,0,5"/>
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="S_ScribeIn" IsReadOnly="True"/>
+                                    <Button x:Name="S_BtnScribeIn" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                </Grid>
+                                
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,10,0">
+                                        <TextBlock Text="AI Model (Speed vs Quality)" FontSize="13" Margin="0,0,0,5"/>
+                                        <ComboBox x:Name="S_ScribeModel" SelectedIndex="1">
+                                            <ComboBoxItem>tiny (Fastest, Lowest Quality)</ComboBoxItem>
+                                            <ComboBoxItem>base (Default)</ComboBoxItem>
+                                            <ComboBoxItem>small</ComboBoxItem>
+                                            <ComboBoxItem>medium</ComboBoxItem>
+                                            <ComboBoxItem>large-v3 (Slowest, Best Quality)</ComboBoxItem>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <TextBlock Text="Language (Audio)" FontSize="13" Margin="0,0,0,5"/>
+                                        <ComboBox x:Name="S_ScribeLang" SelectedIndex="0">
+                                            <ComboBoxItem>Auto-Detect</ComboBoxItem>
+                                            <ComboBoxItem>English</ComboBoxItem>
+                                            <ComboBoxItem>German</ComboBoxItem>
+                                            <ComboBoxItem>Spanish</ComboBoxItem>
+                                            <ComboBoxItem>French</ComboBoxItem>
+                                            <ComboBoxItem>Italian</ComboBoxItem>
+                                            <ComboBoxItem>Dutch</ComboBoxItem>
+                                            <ComboBoxItem>Russian</ComboBoxItem>
+                                        </ComboBox>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,10,0">
+                                        <TextBlock Text="Output Format" FontSize="13" Margin="0,0,0,5"/>
+                                        <ComboBox x:Name="S_ScribeFormat" SelectedIndex="0">
+                                            <ComboBoxItem>txt (Text Document)</ComboBoxItem>
+                                            <ComboBoxItem>srt (Subtitles)</ComboBoxItem>
+                                            <ComboBoxItem>vtt (Web Subtitles)</ComboBoxItem>
+                                            <ComboBoxItem>json</ComboBoxItem>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <TextBlock Text="Task" FontSize="13" Margin="0,0,0,5"/>
+                                        <ComboBox x:Name="S_ScribeTask" SelectedIndex="0">
+                                            <ComboBoxItem>Transcribe (Original Language)</ComboBoxItem>
+                                            <ComboBoxItem>Translate (To English)</ComboBoxItem>
+                                        </ComboBox>
+                                    </StackPanel>
+                                </Grid>
+
+                                <CheckBox x:Name="S_CheckBurn" Content="Burn subtitles directly into a new video file (Requires .srt or .vtt)" Margin="0,10,0,0" Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Border>
+                    </TabItem>
+                    
+                    <TabItem x:Name="TabSpecialUpscale" Style="{StaticResource SubTabStyle}">
+                        <TabItem.Header><TextBlock Text="AI Upscaler"/></TabItem.Header>
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="8" Padding="20">
+                            <StackPanel>
+                                <TextBlock Text="AI Image Upscaling (Upscayl)" FontWeight="Bold" FontSize="18" Margin="0,0,0,15" Foreground="#10B981"/>
+                                
+                                <TextBlock Text="Select Image (Drop file here)" FontSize="13" Margin="0,5,0,5"/>
+                                <Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="S_UpscaleIn" IsReadOnly="True"/><Button x:Name="S_BtnUpscaleIn" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,10,0">
+                                        <TextBlock Text="AI Model" FontSize="13" Margin="0,0,0,5"/>
+                                        <ComboBox x:Name="S_UpscaleModel" SelectedIndex="0">
+                                            <ComboBoxItem>upscayl-standard-4x (Standard)</ComboBoxItem>
+                                            <ComboBoxItem>digital-art-4x (Digital Art / Anime)</ComboBoxItem>
+                                            <ComboBoxItem>remacri-4x (Highly Detailed)</ComboBoxItem>
+                                            <ComboBoxItem>ultramix-balanced-4x (Balanced)</ComboBoxItem>
+                                            <ComboBoxItem>ultrasharp-4x (Sharp Edges)</ComboBoxItem>
+                                            <ComboBoxItem>high-fidelity-4x (High Fidelity)</ComboBoxItem>
+                                            <ComboBoxItem>upscayl-lite-4x (Lite / Fast)</ComboBoxItem>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <TextBlock Text="Scale Factor" FontSize="13" Margin="0,0,0,5"/>
+                                        <ComboBox x:Name="S_UpscaleScale" SelectedIndex="2">
+                                            <ComboBoxItem>2x</ComboBoxItem>
+                                            <ComboBoxItem>3x</ComboBoxItem>
+                                            <ComboBoxItem>4x</ComboBoxItem>
+                                        </ComboBox>
+                                    </StackPanel>
+                                </Grid>
+
+                                <TextBlock Text="Output Directory (Defaults to 'special\upscaled')" FontSize="13" Margin="0,5,0,5"/>
+                                <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="S_UpscaleOutDir" IsReadOnly="True" Cursor="Arrow" Text="Select target folder..."/>
+                                    <Button x:Name="S_BtnUpscaleOut" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </TabItem>
+                    
+                    <TabItem Style="{StaticResource SubTabStyle}">
+                        <TabItem.Header><TextBlock Text="Visualizer"/></TabItem.Header>
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="8" Padding="20">
+                            <StackPanel>
+                                <TextBlock Text="Convert Audio to Video with Visualizer" FontWeight="Bold" FontSize="18" Margin="0,0,0,15" Foreground="{DynamicResource AccentBrush}"/>
+                                <TextBlock Text="1. Select Audio File (Drop file here)" FontSize="13" Margin="0,5,0,5"/>
+                                <Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="S_VisAudio" IsReadOnly="True"/><Button x:Name="S_BtnVisAud" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+                                
+                                <TextBlock Text="2. Select Background Image (Drop optional file here)" FontSize="13" Margin="0,5,0,5"/>
+                                <Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="S_VisImg" IsReadOnly="True"/><Button x:Name="S_BtnVisImg" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+                                
+                                <TextBlock Text="Visualizer Style" FontSize="13" Margin="0,5,0,5"/>
+                                <ComboBox x:Name="S_VisStyle" SelectedIndex="0" Margin="0,0,0,10">
+                                    <ComboBoxItem>Waves (showwaves)</ComboBoxItem>
+                                    <ComboBoxItem>Frequency Bars (showfreqs)</ComboBoxItem>
+                                    <ComboBoxItem>Circular Scope (avectorscope)</ComboBoxItem>
+                                </ComboBox>
+                            </StackPanel>
+                        </Border>
+                    </TabItem>
+                    
+                    <TabItem Style="{StaticResource SubTabStyle}">
+                        <TabItem.Header><TextBlock Text="Video Stabilizer"/></TabItem.Header>
+                        <Border Background="{DynamicResource CardBrush}" CornerRadius="8" Padding="20">
+                            <StackPanel>
+                                <TextBlock Text="Smooth Shaky Camera Footage" FontWeight="Bold" FontSize="18" Margin="0,0,0,10" Foreground="#3B82F6"/>
+                                
+                                <TextBlock Text="Select Shaky Video (Drop file here)" FontSize="13" Margin="0,5,0,5"/>
+                                <Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="S_StabIn" IsReadOnly="True"/><Button x:Name="S_BtnStabIn" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="#3B82F6" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+
+                                <TextBlock Text="Smoothing Level" FontSize="13" Margin="0,5,0,5"/>
+                                <ComboBox x:Name="S_StabLevel" SelectedIndex="1" Margin="0,0,0,10">
+                                    <ComboBoxItem>Light (Less cropping, keeps some natural motion)</ComboBoxItem>
+                                    <ComboBoxItem>Normal (Balanced, standard stabilization)</ComboBoxItem>
+                                    <ComboBoxItem>Heavy (Maximum smoothness, crops more edges)</ComboBoxItem>
+                                </ComboBox>
+                            </StackPanel>
+                        </Border>
+                    </TabItem>
+
+                </TabControl>
+            </TabItem>
+
+        </TabControl>
+
+        <StackPanel Grid.Row="2" Margin="0,20,0,0">
+            <Grid Margin="0,0,0,15">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button x:Name="BtnRun" Grid.Column="0" Content="START PROCESS" Width="160" Height="45" Background="#10B981" Foreground="White" FontWeight="Bold" FontSize="15" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0" IsDefault="True"/>
+                <Button x:Name="BtnCancel" Grid.Column="1" Content="CANCEL ALL" Width="110" Height="45" Background="#EF4444" Foreground="White" FontWeight="Bold" FontSize="13" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0" IsEnabled="False"/>
+                <Button x:Name="BtnSkip" Grid.Column="2" Content="SKIP" Width="80" Height="45" Background="#F59E0B" Foreground="White" FontWeight="Bold" FontSize="13" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0" IsEnabled="False" ToolTip="Skip current file and continue queue"/>
+                <Button x:Name="BtnReset" Grid.Column="3" Content="RESET" Width="90" Height="45" Background="#6B7280" Foreground="White" FontWeight="Bold" FontSize="14" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0"/>
+                <Button x:Name="BtnShow" Grid.Column="4" Content="Open Folder" FontSize="14" Width="120" Height="45" Background="#4B5563" Foreground="White" Visibility="Collapsed" FontWeight="Bold" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0"/>
+                
+                <Border Grid.Column="5" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="15,0" HorizontalAlignment="Right" VerticalAlignment="Center" Height="45">
+                    <CheckBox x:Name="CbAutoScrollLog" Content="Auto-scroll Live Log" Foreground="{DynamicResource TextBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" IsChecked="True"/>
+                </Border>
+            </Grid>
+
+            <Grid Margin="0,0,0,15">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ProgressBar x:Name="PBar" Grid.Column="0" Height="12" Background="{DynamicResource BorderBrush}" Foreground="{DynamicResource AccentBrush}" BorderThickness="0" Minimum="0" Maximum="100" VerticalAlignment="Center"/>
+                <TextBlock x:Name="TxtETA" Grid.Column="1" Text="ETA: --:--" TextAlignment="Right" Margin="20,0,15,0" FontSize="14" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <TextBlock x:Name="StatusText" Grid.Column="2" Text="Ready." TextAlignment="Right" Margin="5,0,0,0" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+            </Grid>
+
+            <Expander x:Name="ExpLog" Header="Live Log (Errors and Details)" Foreground="{DynamicResource MutedBrush}" FontWeight="SemiBold" FontSize="13" Margin="0,5,0,0">
+                <TextBox x:Name="LogBox" Background="#0F172A" Foreground="#10B981" Height="200" IsReadOnly="True" VerticalScrollBarVisibility="Visible" FontFamily="Consolas" FontSize="14" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,10,0,0"/>
+            </Expander>
+        </StackPanel>
+    </Grid>
+</Window>
+"@
+
+    # Parse the defined XML payload into the active WPF window
+    $reader = (New-Object System.Xml.XmlNodeReader $xaml)
+    $window = [Windows.Markup.XamlReader]::Load($reader)
+
+    # Find and map all XAML UI elements to their corresponding PowerShell variables
+    $UIElements = @(
+        "TaskbarProgress",
+        "MainTabs", "BtnRun", "BtnShow", "BtnSettings", "BtnUpdate", "BtnCancel", "BtnSkip", "BtnReset", "StatusText", "TxtETA", "PBar", "LogBox", "CbAutoScrollLog", "TxtSubtitle",
+        "TabAudio", "TabVideo", "TabImage", "TabMuxing", "TabDownload", "ExpLog",
+        "A_InList", "A_OutDir", "A_BtnAdd", "A_BtnClear", "A_BtnInfo", "A_BtnOut", "A_CFormat", "A_CQual", "A_CChan", "A_CMeta", "A_CheckNorm", "A_TrimStart", "A_TrimEnd", "A_CheckExtract", "A_CtxRemove", "A_CtxClear", "A_CheckCustomParams", "A_CustomParamsPanel", "A_ParamsPreview", "A_CustomParams",
+        "V_InList", "V_OutDir", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
+        "I_InList", "I_OutDir", "I_BtnAdd", "I_BtnClear", "I_BtnInfo", "I_BtnOut", "I_CFormat", "I_CQual", "I_CRes", "I_CheckMeta", "I_CtxRemove", "I_CtxClear",
+        "M_InVideo", "M_InAudio", "M_OutFile", "M_BtnVid", "M_BtnAud", "M_BtnOut",
+        "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
+        "TabSpecial", "SpecialSubTabs", "S_VisAudio", "S_VisImg", "S_VisStyle", "S_BtnVisAud", "S_BtnVisImg", "S_StabIn", "S_BtnStabIn", "S_StabLevel",
+        "S_ScribeIn", "S_BtnScribeIn", "S_ScribeLang", "S_CheckBurn", "S_ScribeFormat", "S_ScribeModel", "S_ScribeTask",
+        "TabSpecialUpscale", "S_UpscaleIn", "S_BtnUpscaleIn", "S_UpscaleModel", "S_UpscaleScale", "S_UpscaleOutDir", "S_BtnUpscaleOut"
+    )
+    foreach ($element in $UIElements) { Set-Variable -Name $element -Value $window.FindName($element) -Scope Script }
+
+    # ==============================================================================
+    # 5. UI BEHAVIOR & HELPER FUNCTIONS
+    # ==============================================================================
+
+    # Function to apply loaded settings (Theme, Global Default Directories) to the UI
+    function Apply-Config {
+        $bc = New-Object System.Windows.Media.BrushConverter
+        if ($Config.Theme -eq "Dark") {
+            $window.Resources["BgBrush"] = $bc.ConvertFromString("#0F172A")
+            $window.Resources["CardBrush"] = $bc.ConvertFromString("#1E293B")
+            $window.Resources["TextBrush"] = $bc.ConvertFromString("#F8FAFC")
+            $window.Resources["MutedBrush"] = $bc.ConvertFromString("#94A3B8")
+            $window.Resources["BorderBrush"] = $bc.ConvertFromString("#334155")
+            $window.Resources["InputBgBrush"] = $bc.ConvertFromString("#0F172A")
+        }
+        else {
+            $window.Resources["BgBrush"] = $bc.ConvertFromString("#F3F4F6")
+            $window.Resources["CardBrush"] = $bc.ConvertFromString("#FFFFFF")
+            $window.Resources["TextBrush"] = $bc.ConvertFromString("#1F2937")
+            $window.Resources["MutedBrush"] = $bc.ConvertFromString("#6B7280")
+            $window.Resources["BorderBrush"] = $bc.ConvertFromString("#D1D5DB")
+            $window.Resources["InputBgBrush"] = $bc.ConvertFromString("#FFFFFF")
+        }
+        
+        $window.Topmost = [bool]$Config.AlwaysOnTop
+
+        if ($Config.DefaultOutDir -and (Test-Path $Config.DefaultOutDir)) {
+            $A_OutDir.Text = $Config.DefaultOutDir
+            $V_OutDir.Text = $Config.DefaultOutDir
+            $I_OutDir.Text = $Config.DefaultOutDir
+            $Y_OutDir.Text = $Config.DefaultOutDir
+        }
+    }
+    Apply-Config
+
+    # Restore Whisper AI model from config
+    $modelItemIdx = 1
+    for ($i = 0; $i -lt $S_ScribeModel.Items.Count; $i++) {
+        if ($S_ScribeModel.Items[$i].Content -match "^$($Config.WhisperModel)") {
+            $modelItemIdx = $i; break
+        }
+    }
+    $S_ScribeModel.SelectedIndex = $modelItemIdx
+
+    # Verify all tool paths are available, and prompt to install them if missing via WinGet
+    function Check-Missing-Tools {
+        Find-Tools
+
+        if ($script:State.ffmpegFound -and $script:isWinGetVersion -and $script:State.jsRuntimeFound) {
+            $StatusText.Text = "Ready."
+            $StatusText.Foreground = $window.Resources["TextBrush"]
+            return
+        }
+
+        $StatusText.Text = "WinGet dependencies missing or incomplete!"
+        $StatusText.Foreground = "#EF4444" 
+
+        $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        $win = New-Object System.Windows.Window
+        $win.Title = "Missing System Dependencies"
+        $win.SizeToContent = "WidthAndHeight"; $win.WindowStartupLocation = "CenterScreen"; $win.ResizeMode = "NoResize"; $win.Background = $window.Resources["BgBrush"]
+    
+        $sp = New-Object System.Windows.Controls.StackPanel
+        $sp.Margin = 20
+        $tbMsg = New-Object System.Windows.Controls.TextBlock
+        $tbMsg.TextWrapping = "Wrap"; $tbMsg.MaxWidth = 450; $tbMsg.Foreground = $window.Resources["TextBrush"]; $tbMsg.Margin = "0,0,0,15"
+    
+        if ($script:State.ytdlpFound -and -not $script:isWinGetVersion) {
+            $tbMsg.Inlines.Add("A portable version of yt-dlp was found, but the official WinGet version is missing.`n`nIt is highly recommended to install the WinGet version to ensure 4K SABR support works correctly.`n`n")
+        }
+        else {
+            $tbMsg.Inlines.Add("Required tools are missing or not installed via WinGet.`n`n")
+        }
+
+        if (-not $isAdmin) {
+            $tbAdmin = New-Object System.Windows.Documents.Run
+            $tbAdmin.Text = "Attention! Run as Admin to use Auto-Install.`n`n"; $tbAdmin.Foreground = "#EF4444"; $tbAdmin.FontWeight = "Bold"
+            $tbMsg.Inlines.Add($tbAdmin)
+        }
+
+        if (-not $script:isWinGetVersion) { $tbMsg.Inlines.Add("- yt-dlp (WinGet version) -> Missing`n") }
+        if (-not $script:State.ffmpegFound) { $tbMsg.Inlines.Add("- FFmpeg -> Missing`n") }
+        if (-not $script:State.jsRuntimeFound) { $tbMsg.Inlines.Add("- Node.js / Deno -> Missing`n") }
+
+        [void]$sp.Children.Add($tbMsg)
+        $btnSp = New-Object System.Windows.Controls.StackPanel
+        $btnSp.Orientation = "Horizontal"; $btnSp.HorizontalAlignment = "Right"
+
+        $btnAuto = New-Object System.Windows.Controls.Button
+        $btnAuto.Content = "Install WinGet Version"; $btnAuto.Width = 160; $btnAuto.Height = 35; $btnAuto.Margin = "0,0,10,0"; $btnAuto.Background = "#10B981"; $btnAuto.Foreground = "White"; $btnAuto.BorderThickness = 0; $btnAuto.Cursor = "Hand"
+    
+        if (-not $isAdmin) { $btnAuto.IsEnabled = $false; $btnAuto.Opacity = 0.5 } 
+        else { $btnAuto.Add_Click({ $win.DialogResult = $true; $win.Close() }) }
+    
+        $btnCancel = New-Object System.Windows.Controls.Button
+        $btnCancel.Content = "Use Existing / Close"; $btnCancel.Width = 130; $btnCancel.Height = 35; $btnCancel.Background = "#6B7280"; $btnCancel.Foreground = "White"; $btnCancel.BorderThickness = 0; $btnCancel.Cursor = "Hand"
+        $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+        [void]$btnSp.Children.Add($btnAuto); [void]$btnSp.Children.Add($btnCancel); [void]$sp.Children.Add($btnSp)
+        $win.Content = $sp
+
+        # If user accepts, run WinGet installs in the background
+        if ($win.ShowDialog() -eq $true) {
+            # Validate WinGet is installed before proceeding
+            if (-not (Get-Command "winget" -ErrorAction SilentlyContinue)) {
+                [void][System.Windows.MessageBox]::Show("Windows Package Manager (winget) is not installed or not recognized on your system.`n`nPlease install the 'App Installer' from the Microsoft Store, or install the missing tools manually.", "Winget Not Found", 0, 16)
+                return
+            }
+
+            $StatusText.Text = "Installing WinGet dependencies..."
+            
+            $ytProc = Start-Process winget -ArgumentList "install --id yt-dlp.yt-dlp --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
+            if ($ytProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("yt-dlp installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+
+            $ffProc = Start-Process winget -ArgumentList "install --id Gyan.FFmpeg --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
+            if ($ffProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("FFmpeg installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+
+            $nodeProc = Start-Process winget -ArgumentList "install --id OpenJS.NodeJS --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
+            if ($nodeProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("Node.js installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+        
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+            Find-Tools
+        
+            if ($script:State.ffmpegFound -and $script:isWinGetVersion -and $script:State.jsRuntimeFound) {
+                $StatusText.Text = "WinGet Tools Ready."; $StatusText.Foreground = "#10B981"
+                [void][System.Windows.MessageBox]::Show("Dependencies successfully installed!", "Success", 0, 64)
+            }
+            else {
+                $StatusText.Text = "Installation Incomplete."; $StatusText.Foreground = "#EF4444"
+                [void][System.Windows.MessageBox]::Show("Tools installed but not detected. Restart might be required.", "Warning", 0, 48)
+            }
+        }
+    }
+
+    # Queue resuming logic initialized once UI finishes rendering
+    $window.Add_ContentRendered({ 
+        $window.Dispatcher.InvokeAsync([Action] {
+        
+                Check-Missing-Tools 
+
+                # 1. Background Pre-fetch for yt-dlp supported sites
+                if ($null -eq $script:State.SupportedSitesCache) {
+                    [void][System.Threading.Tasks.Task]::Run([Action]{
+                        try {
+                            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                            $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
+                            $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -TimeoutSec 10
+                        } catch { $script:State.SupportedSitesCache = "fallback_offline" }
+                    })
+                }
+
+                # 2. Safe UI Initialization for Image Tab (Grey-out Logic)
+                if ($null -ne $I_CFormat) {
+                    $I_CFormat.Add_SelectionChanged({
+                        $fmt = Get-CbVal $I_CFormat
+                        if ($fmt -match "JPG" -or $fmt -match "WEBP") {
+                            $I_CQual.IsEnabled = $true; $I_CQual.Opacity = 1.0
+                        } else {
+                            $I_CQual.IsEnabled = $false; $I_CQual.Opacity = 0.4
+                        }
+                    })
+                    $I_CFormat.SelectedIndex = 0
+                }
+
+                # 3. Safe UI Initialization for all Drag & Drop TextBoxes
+                foreach ($tb in @($M_InVideo, $M_InAudio, $S_VisAudio, $S_VisImg, $S_StabIn, $S_ScribeIn, $S_UpscaleIn)) {
+                    if ($null -ne $tb) {
+                        $tb.Add_PreviewDragOver($DragEnterHandler)
+                        $tb.Add_DragLeave($DragLeaveHandler)
+                        $tb.Add_Drop($TextBoxDropHandler)
+                    }
+                }
+
+                # 4. Safe UI Initialization for ALL "Special" Tab Browse Buttons
+                if ($null -ne $S_BtnVisAud) { $S_BtnVisAud.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.flac;*.ogg|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_VisAudio.Text = $fd.FileName } }) }
+                if ($null -ne $S_BtnVisImg) { $S_BtnVisImg.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Images|*.jpg;*.png;*.jpeg|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_VisImg.Text = $fd.FileName } }) }
+                if ($null -ne $S_BtnStabIn) { $S_BtnStabIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Video|*.mp4;*.mkv;*.mov;*.avi|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_StabIn.Text = $fd.FileName } }) }
+                if ($null -ne $S_BtnScribeIn) { $S_BtnScribeIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Media Files|*.mp4;*.mkv;*.mp3;*.wav;*.m4a;*.ogg;*.flac|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_ScribeIn.Text = $fd.FileName } }) }
+                if ($null -ne $S_BtnUpscaleIn) { $S_BtnUpscaleIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Images|*.jpg;*.png;*.jpeg;*.webp|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_UpscaleIn.Text = $fd.FileName } }) }
+
+                # 5. Attempt to recover crashed/incomplete queues from the last run
+                if (Test-Path $QueueFile) {
+                    $ans = [System.Windows.MessageBox]::Show("Unfinished jobs were found from a previous session.`n`nWould you like to resume processing them?", "Resume Queue", "YesNo", 32)
+                    if ($ans -eq "Yes") {
+                        try {
+                            $savedQueue = Get-Content $QueueFile -Raw | ConvertFrom-Json
+                            foreach ($sq in $savedQueue) {
+                                $script:State.BatchQueue += @{
+                                    Args            = [string[]]$sq.Args
+                                    SafeArgs        = [string[]]$sq.SafeArgs
+                                    HasCustomParams = [bool]$sq.HasCustomParams
+                                    Retried         = [bool]$sq.Retried
+                                    IsYtDlp         = $sq.IsYtDlp
+                                    IsWhisper       = $sq.IsWhisper
+                                    CustomTool      = $sq.CustomTool
+                                    OutputDir       = $sq.OutputDir
+                                    InputFile       = $sq.InputFile
+                                    OutputFile      = $sq.OutputFile
+                                    ListBox         = $null
+                                    ListItem        = $null
+                                }
+                            }
+                            $BtnRun.IsEnabled = $false; $BtnUpdate.IsEnabled = $false; $BtnCancel.IsEnabled = $true; $BtnSkip.IsEnabled = $true
+                            $LogBox.AppendText("[RESUME] Loaded $($script:State.BatchQueue.Count) jobs from previous session.`r`n")
+                            Process-NextJob
+                        }
+                        catch {
+                            [System.GC]::Collect()
+                            Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue
+                        }
+                    } else {
+                        [System.GC]::Collect()
+                        Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue
+                    }
+                }
+        
+                $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+
+            }, [System.Windows.Threading.DispatcherPriority]::ApplicationIdle)
+    })
+
+    # Helper function to extract text values cleanly from WPF ComboBox objects
+    function Get-CbVal([System.Windows.Controls.ComboBox]$cb) {
+        if ($cb.SelectedIndex -ge 0) {
+            $item = $cb.Items[$cb.SelectedIndex]
+            if ($item -is [System.Windows.Controls.ComboBoxItem]) {
+                return $item.Content.ToString().Trim()
+            }
+            return $item.ToString().Trim()
+        }
+        if (-not [string]::IsNullOrWhiteSpace($cb.Text)) {
+            return $cb.Text.Trim()
+        }
+        return ""
+    }
+
+    # Helper function to persist the pending job queue state to disk
+    function Save-Queue {
+        if ($script:State.BatchQueue.Count -eq 0 -or $script:State.CurrentJobIndex -ge $script:State.BatchQueue.Count) {
+            if (Test-Path $QueueFile) { Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue }
+            return
+        }
+        $exportList = for ($i = $script:State.CurrentJobIndex; $i -lt $script:State.BatchQueue.Count; $i++) {
+            $job = $script:State.BatchQueue[$i]
+            @{
+                Args            = $job.Args
+                SafeArgs        = $job.SafeArgs
+                HasCustomParams = $job.HasCustomParams
+                Retried         = $job.Retried
+                IsYtDlp         = $job.IsYtDlp
+                IsWhisper       = $job.IsWhisper
+                CustomTool      = $job.CustomTool
+                OutputDir       = $job.OutputDir
+                InputFile       = $job.InputFile
+                OutputFile      = $job.OutputFile
+            }
+        }
+        $exportList | ConvertTo-Json -Depth 5 | Set-Content $QueueFile -Force -ErrorAction SilentlyContinue
+    }
+
+    # ==============================================================================
+    # 6. COMMAND LINE ARGUMENT BUILDERS
+    # ==============================================================================
+
+    # Function to build arguments for yt-dlp based on UI selections
+    function Get-YtDlpArgs([bool]$IsPreview, [bool]$ExcludeCustom, [string]$PlaylistFlag) {
+        $link = $Y_Link.Text.Trim()
+        if ([string]::IsNullOrWhiteSpace($link) -or $link -eq "https://") { $link = "URL_HERE" }
+
+        $outDir = $Y_OutDir.Text
+        if ([string]::IsNullOrWhiteSpace($outDir) -or $outDir -match "Select target") { 
+            if ($Y_Type.SelectedIndex -eq 1) { $outDir = Join-Path $ScriptDir "download\audio" }
+            else { $outDir = Join-Path $ScriptDir "download\video" }
+        }
+
+        # Bypass YouTube bot checks utilizing web player clients 
+        $extArgs = "youtube:player_client=web,default"
+        if (-not $Y_CheckAutoPoToken.IsChecked) {
+            $poToken = if ($Y_PoToken.Text) { $Y_PoToken.Text.Trim() } else { "" }
+            if ($poToken) { $extArgs += ";po_token=web+$poToken" }
+        }
+
+        $argList = [System.Collections.Generic.List[string]]::new()
+        $argList.AddRange([string[]]@(
+                "--ffmpeg-location", $script:State.ffmpeg,
+                "--clean-infojson",
+                "--js-runtime", "deno",
+                "--js-runtime", "node",
+                "--remote-components", "ejs:github",
+                "--extractor-args", $extArgs,
+                "--force-overwrites"
+            ))
+
+        $resCb = Get-CbVal $Y_Res
+        if ($Y_Type.SelectedIndex -eq 1) { 
+            $afmt = (Get-CbVal $Y_AFormat).ToLower()
+            
+            $aq = "0"
+            if ($resCb -match "320") { $aq = "320K" }
+            elseif ($resCb -match "256") { $aq = "256K" }
+            elseif ($resCb -match "192") { $aq = "192K" }
+            elseif ($resCb -match "128") { $aq = "128K" }
+            elseif ($resCb -match "96") { $aq = "96K" }
+            elseif ($resCb -match "64") { $aq = "64K" }
+            elseif ($resCb -match "48") { $aq = "48K" }
+            
+            $argList.AddRange([string[]]@("-x", "--audio-format", $afmt, "--audio-quality", $aq))
+        }
+        else { 
+            $vfmt = (Get-CbVal $Y_VFormat).ToLower()
+            
+            if ($resCb -match "2160" -or $resCb -match "4K") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best")) }
+            elseif ($resCb -match "1440") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1440]+bestaudio/best")) }
+            elseif ($resCb -match "1080") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best")) }
+            elseif ($resCb -match "720") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best")) }
+            elseif ($resCb -match "480") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best")) }
+            elseif ($resCb -match "360") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best")) }
+            elseif ($resCb -match "240") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=240][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=240]+bestaudio/best")) }
+            elseif ($resCb -match "144") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=144][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=144]+bestaudio/best")) }
+            else { $argList.AddRange([string[]]@("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best")) }
+            
+            $argList.AddRange([string[]]@("--merge-output-format", $vfmt))
+        }
+
+        if ($IsPreview) {
+            if ($link -match "list=") { $argList.Add("[--yes-playlist / --no-playlist]") }
+            else { $argList.Add("--no-playlist") }
+        }
+        else {
+            if ($PlaylistFlag) { $argList.Add($PlaylistFlag) }
+            else { $argList.Add("--no-playlist") }
+        }
+
+        if ($Y_CheckCookie.IsChecked) {
+            if ($Y_CookiePath.Text -and (Test-Path $Y_CookiePath.Text)) { $argList.AddRange([string[]]@("--cookies", $Y_CookiePath.Text)) }
+            else { $argList.AddRange([string[]]@("--cookies-from-browser", (Get-CbVal $Y_CookieBrowser))) }
+        }
+
+        if ($Y_CheckMeta.IsChecked) { $argList.AddRange([string[]]@("--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg")) }
+        if ($Y_CheckSubs.IsChecked) { $argList.Add("--embed-subs") }
+        if ($Y_CheckSponsor.IsChecked) { $argList.AddRange([string[]]@("--sponsorblock-remove", "all")) }
+
+        if (-not $ExcludeCustom -and $Y_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($Y_CustomParams.Text)) {
+            $pattern = "`"[^`"]+`"|'[^']+'|[^ ]+"
+            $customArgs = [System.Text.RegularExpressions.Regex]::Matches($Y_CustomParams.Text, $pattern) | ForEach-Object { $_.Value.Trim("'`"") }
+            $argList.AddRange([string[]]$customArgs)
+        }
+
+        $argList.AddRange([string[]]@("-o", "$outDir\%(title)s.%(ext)s", $link))
+        return $argList.ToArray()
+    }
+
+    # Function to build visual string representation for yt-dlp arguments
+    function Update-YtDlpPreview {
+        if (-not $Y_CheckCustomParams.IsChecked) { return }
+        
+        $args = Get-YtDlpArgs -isPreview $true -ExcludeCustom $false -PlaylistFlag ""
+        if ($null -eq $args) { return }
+        
+        $formattedArgs = foreach ($a in $args) {
+            if ($a -match '\s' -and $a -notmatch '^\[.*\]$') { "`"$a`"" } else { $a }
+        }
+        if ($Y_ParamsPreview) { $Y_ParamsPreview.Text = "yt-dlp " + ($formattedArgs -join " ") }
+    }
+
+    # Function to build arguments for ffmpeg (Video tab) based on UI selections
+    function Get-FfmpegArgs([bool]$IsPreview, [string]$inFile, [string]$outFile, [bool]$ExcludeCustom) {
+        $argList = [System.Collections.Generic.List[string]]::new()
+        $argList.AddRange([string[]]@("-hide_banner", "-y"))
+
+        if ($V_TrimStart.Text -ne "00:00:00") { $argList.AddRange([string[]]@("-ss", $V_TrimStart.Text)) }
+        if ($V_TrimEnd.Text -ne "00:00:00") { $argList.AddRange([string[]]@("-to", $V_TrimEnd.Text)) }
+
+        $delaySec = 0
+        $useDualInput = $false
+        # Handles custom audio syncing by delaying specific inputs
+        if ([double]::TryParse($V_AudioDelay.Text, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$delaySec) -and $delaySec -ne 0) {
+            $argList.AddRange([string[]]@("-i", $inFile))
+            $argList.AddRange([string[]]@("-itsoffset", $delaySec.ToString([System.Globalization.CultureInfo]::InvariantCulture), "-i", $inFile))
+            $useDualInput = $true
+        }
+        else {
+            $argList.AddRange([string[]]@("-i", $inFile))
+        }
+
+        $vf = [System.Collections.Generic.List[string]]::new()
+        $af = [System.Collections.Generic.List[string]]::new()
+        
+        $resCb = Get-CbVal $V_CRes
+        if ($resCb -match "1080p") { $vf.Add("scale=-2:1080") }
+        elseif ($resCb -match "720p") { $vf.Add("scale=-2:720") }
+
+        $speedCb = Get-CbVal $V_CSpeed
+        if ($speedCb -match "0.5x") { $vf.Add("setpts=2.0*PTS"); $af.Add("atempo=0.5") }
+        elseif ($speedCb -match "1.25x") { $vf.Add("setpts=0.8*PTS"); $af.Add("atempo=1.25") }
+        elseif ($speedCb -match "1.5x") { $vf.Add("setpts=0.66667*PTS"); $af.Add("atempo=1.5") }
+        elseif ($speedCb -match "2.0x") { $vf.Add("setpts=0.5*PTS"); $af.Add("atempo=2.0") }
+
+        $fpsCb = Get-CbVal $V_CFPS
+        if ($fpsCb -match "60") { $argList.AddRange([string[]]@("-r", "60")) }
+        elseif ($fpsCb -match "30") { $argList.AddRange([string[]]@("-r", "30")) }
+        elseif ($fpsCb -match "24") { $argList.AddRange([string[]]@("-r", "24")) }
+
+        $volCb = Get-CbVal $V_CVol
+        if ($volCb -match "150") { $af.Add("volume=1.5") }
+        elseif ($volCb -match "Normalize") { $af.Add("loudnorm") }
+
+        # Handles subtitle hardcoding via ffmpeg filters
+        if (-not [string]::IsNullOrWhiteSpace($V_SubPath.Text)) {
+            $safeSub = $V_SubPath.Text.Replace('\', '/').Replace(':', '\:').Replace('[', '\[').Replace(']', '\]').Replace("'", "\'").Replace(',', '\,')
+            $vf.Add("subtitles='''$safeSub'''")
+        }
+
+        # Handle Hardware Acceleration Mapping
+        $vCodecCb = (Get-CbVal $V_CCodec); $hwCb = (Get-CbVal $V_CHWAccel); $vCodec = "libx264"
+        if ($vCodecCb -match "Copy") { $vCodec = "copy" }
+        elseif ($vCodecCb -match "H.264") {
+            if ($hwCb -match "NVIDIA") { $vCodec = "h264_nvenc" } elseif ($hwCb -match "AMD") { $vCodec = "h264_amf" } elseif ($hwCb -match "Intel") { $vCodec = "h264_qsv" } else { $vCodec = "libx264" }
+        }
+        elseif ($vCodecCb -match "H.265") {
+            if ($hwCb -match "NVIDIA") { $vCodec = "hevc_nvenc" } elseif ($hwCb -match "AMD") { $vCodec = "hevc_amf" } elseif ($hwCb -match "Intel") { $vCodec = "hevc_qsv" } else { $vCodec = "libx265" }
+        }
+        elseif ($vCodecCb -match "AV1") {
+            if ($hwCb -match "NVIDIA") { $vCodec = "av1_nvenc" } elseif ($hwCb -match "AMD") { $vCodec = "av1_amf" } elseif ($hwCb -match "Intel") { $vCodec = "av1_qsv" } else { $vCodec = "libsvtav1" }
+        }
+
+        if ($vCodec -match "nvenc|amf|qsv") {
+            $vf.Add("format=yuv420p") 
+            if ($vCodec -match "nvenc") { 
+                $argList.AddRange([string[]]@("-preset", "p4", "-tune", "hq", "-spatial-aq", "1", "-multipass", "2")) 
+            }
+        }
+
+        $aCodecCb = (Get-CbVal $V_CAudio); $aCodec = "aac"
+        if ($aCodecCb -match "Copy") { $aCodec = "copy" } elseif ($aCodecCb -match "AC3") { $aCodec = "ac3" }
+
+        $argList.AddRange([string[]]@("-c:v", $vCodec, "-c:a", $aCodec))
+        if ($vCodec -ne "copy" -and $vf.Count -gt 0) { $argList.AddRange([string[]]@("-vf", ($vf -join ","))) }
+        if ($aCodec -ne "copy" -and $af.Count -gt 0) { $argList.AddRange([string[]]@("-af", ($af -join ","))) }
+
+        # Audio Track mappings based on sync requirements
+        if ($useDualInput) {
+            if ($V_CAudioTracks.SelectedIndex -eq 1) { $argList.AddRange([string[]]@("-map", "0:v", "-map", "1:a?", "-map", "0:s?")) } else { $argList.AddRange([string[]]@("-map", "0:v:0", "-map", "1:a:0")) }
+        }
+        else {
+            if ($V_CAudioTracks.SelectedIndex -eq 1) { $argList.AddRange([string[]]@("-map", "0")) } else { $argList.AddRange([string[]]@("-map", "0:v:0", "-map", "0:a:0?")) }
+        }
+
+        # Target Size or CRF Video Compression Bitrate logic
+        if ($vCodec -ne "copy") {
+            if ($V_CheckTargetSize.IsChecked -and $script:State.ffprobeFound -and -not $IsPreview) {
+                $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+                $pinfo.FileName = $script:State.ffprobe
+                $pinfo.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$inFile`""
+                $pinfo.UseShellExecute = $false; $pinfo.RedirectStandardOutput = $true; $pinfo.CreateNoWindow = $true
+                $pDur = [System.Diagnostics.Process]::Start($pinfo); $durStr = $pDur.StandardOutput.ReadToEnd().Trim(); $pDur.WaitForExit()
+                
+                $d = 0
+                if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$d) -and $d -gt 0) {
+                    $targetMB = [double]$V_TargetSizeMB.Text; $audioBR = 128
+                    $videoBR = [math]::Max(100, [math]::Round((($targetMB * 8192) / $d) - $audioBR))
+                    $argList.AddRange([string[]]@("-b:v", "${videoBR}k", "-maxrate", "$([math]::Round($videoBR * 1.5))k", "-bufsize", "$([math]::Round($videoBR * 2))k"))
+                }
+                else { $argList.AddRange([string[]]@("-crf", "$($V_SliderCRF.Value)")) }
+            }
+            elseif ($V_CheckTargetSize.IsChecked -and $IsPreview) { $argList.Add("[Target Size Bitrate Calculation]") }
+            else {
+                if ($vCodec -match "nvenc|amf|qsv") {
+                    $argList.AddRange([string[]]@("-cq", "$($V_SliderCRF.Value)", "-b:v", "0"))
+                }
+                else {
+                    $argList.AddRange([string[]]@("-crf", "$($V_SliderCRF.Value)"))
+                }
+            }
+        }
+
+        if (-not $ExcludeCustom -and $V_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($V_CustomParams.Text)) {
+            $pattern = "`"[^`"]+`"|'[^']+'|[^ ]+"
+            $customArgs = [System.Text.RegularExpressions.Regex]::Matches($V_CustomParams.Text, $pattern) | ForEach-Object { $_.Value.Trim("'`"") }
+            $argList.AddRange([string[]]$customArgs)
+        }
+
+        $argList.Add($outFile)
+        return @{ Args = $argList.ToArray(); UseDual = $useDualInput }
+    }
+
+    # Function to build visual string representation for FFmpeg (Video) arguments
+    function Update-FfmpegPreview {
+        if (-not $V_CheckCustomParams.IsChecked) { return }
+        
+        $inFile = "C:\input_video.mp4"
+        if ($null -ne $V_InList.SelectedItem) { $inFile = $V_InList.SelectedItem.ToString() }
+        elseif ($V_InList.Items.Count -gt 0) { $inFile = $V_InList.Items[0].ToString() }
+
+        $outDir = $V_OutDir.Text
+        if ([string]::IsNullOrWhiteSpace($outDir) -or $outDir -match "Select target") { $outDir = Join-Path $ScriptDir "convert\video" }
+        $name = if ($inFile -ne "C:\input_video.mp4") { [System.IO.Path]::GetFileNameWithoutExtension($inFile) } else { "output_video" }
+        $fmt = (Get-CbVal $V_CFormat).ToLower()
+        $outFile = Join-Path $outDir "$name.$fmt"
+        
+        $args = (Get-FfmpegArgs -IsPreview $true -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
+        $previewString = "ffmpeg "
+        foreach ($a in $args) {
+            if ($a -match '\s' -and $a -notmatch '^\[.*\]$') { $previewString += "`"$a`" " }
+            else { $previewString += "$a " }
+        }
+        if ($V_ParamsPreview) { $V_ParamsPreview.Text = $previewString.Trim() }
+    }
+
+    # Function to build arguments for ffmpeg (Audio tab) based on UI selections
+    function Get-AudioFfmpegArgs([bool]$IsPreview, [string]$inFile, [string]$outFile, [bool]$ExcludeCustom) {
+        $argList = [System.Collections.Generic.List[string]]::new()
+        $argList.AddRange([string[]]@("-hide_banner", "-y"))
+        
+        if ($A_TrimStart.Text -ne "00:00:00") { $argList.AddRange([string[]]@("-ss", $A_TrimStart.Text)) }
+        if ($A_TrimEnd.Text -ne "00:00:00") { $argList.AddRange([string[]]@("-to", $A_TrimEnd.Text)) }
+        
+        $argList.AddRange([string[]]@("-i", $inFile, "-vn"))
+        $fmt = (Get-CbVal $A_CFormat).ToLower()
+        $audioCodec = if ($fmt -eq "mp3") { "libmp3lame" } elseif ($fmt -eq "flac") { "flac" } elseif ($fmt -eq "wav") { "pcm_s16le" } else { "aac" }
+        
+        $qualCb = Get-CbVal $A_CQual
+        if ($qualCb -match "128k") { $argList.AddRange([string[]]@("-b:a", "128k")) } elseif ($qualCb -match "192k") { $argList.AddRange([string[]]@("-b:a", "192k")) } elseif ($qualCb -match "320k") { $argList.AddRange([string[]]@("-b:a", "320k")) }
+        
+        $chanCb = Get-CbVal $A_CChan
+        if ($chanCb -match "Mono") { $argList.AddRange([string[]]@("-ac", "1")) } elseif ($chanCb -match "Stereo") { $argList.AddRange([string[]]@("-ac", "2")) }
+        
+        if ((Get-CbVal $A_CMeta) -match "Remove") { $argList.AddRange([string[]]@("-map_metadata", "-1")) }
+        if ($A_CheckNorm.IsChecked) { $argList.AddRange([string[]]@("-af", "loudnorm")) }
+        
+        $argList.AddRange([string[]]@("-c:a", $audioCodec))
+        
+        if (-not $ExcludeCustom -and $A_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($A_CustomParams.Text)) {
+            $pattern = "`"[^`"]+`"|'[^']+'|[^ ]+"
+            $customArgs = [System.Text.RegularExpressions.Regex]::Matches($A_CustomParams.Text, $pattern) | ForEach-Object { $_.Value.Trim("'`"") }
+            $argList.AddRange([string[]]$customArgs)
+        }
+        $argList.Add($outFile)
+        return @{ Args = $argList.ToArray() }
+    }
+
+    # Function to build visual string representation for FFmpeg (Audio) arguments
+    function Update-AudioFfmpegPreview {
+        if (-not $A_CheckCustomParams.IsChecked) { return }
+        
+        $inFile = "C:\input_audio.mp3"
+        if ($null -ne $A_InList.SelectedItem) { $inFile = $A_InList.SelectedItem.ToString() }
+        elseif ($A_InList.Items.Count -gt 0) { $inFile = $A_InList.Items[0].ToString() }
+
+        $outDir = $A_OutDir.Text
+        if ([string]::IsNullOrWhiteSpace($outDir) -or $outDir -match "Select target") { $outDir = Join-Path $ScriptDir "convert\audio" }
+        $name = if ($inFile -ne "C:\input_audio.mp3") { [System.IO.Path]::GetFileNameWithoutExtension($inFile) } else { "output_audio" }
+        $fmt = (Get-CbVal $A_CFormat).ToLower()
+        $outFile = Join-Path $outDir "$name.$fmt"
+        
+        $args = (Get-AudioFfmpegArgs -IsPreview $true -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
+        $previewString = "ffmpeg "
+        foreach ($a in $args) {
+            if ($a -match '\s' -and $a -notmatch '^\[.*\]$') { $previewString += "`"$a`" " }
+            else { $previewString += "$a " }
+        }
+        if ($A_ParamsPreview) { $A_ParamsPreview.Text = $previewString.Trim() }
+    }
+
+    $script:State.IsUpdatingUI = $false
+    
+    # Generic function to force an update to all active tool previews
+    function Update-AllPreviews {
+        if ($script:State.IsUpdatingUI) { return }
+        
+        $script:State.IsUpdatingUI = $true
+        try {
+            Update-AudioFfmpegPreview
+            Update-FfmpegPreview
+            Update-YtDlpPreview
+        }
+        finally {
+            $script:State.IsUpdatingUI = $false
+        }
+    }
+
+    # ==============================================================================
+    # 7. EVENT BINDING (User Interface Interactions)
+    # ==============================================================================
+
+    # Update previews when user selections change
+    $A_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { Update-AudioFfmpegPreview })
+    $V_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { Update-FfmpegPreview })
+
+    $MainTabs.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] {
+            if ($_.OriginalSource -eq $MainTabs) { Update-AllPreviews }
+        })
+
+    # Map settings changes to preview updates for the Audio Tab
+    $A_CheckCustomParams.Add_Checked({ $A_CustomParamsPanel.Visibility = "Visible"; Update-AudioFfmpegPreview })
+    $A_CheckCustomParams.Add_Unchecked({ $A_CustomParamsPanel.Visibility = "Collapsed"; $A_CustomParams.Clear(); Update-AudioFfmpegPreview })
+    foreach ($ctrl in @($A_CFormat, $A_CQual, $A_CChan, $A_CMeta)) { $ctrl.Add_SelectionChanged({ Update-AudioFfmpegPreview }) }
+    $A_CustomParams.Add_TextChanged({ Update-AudioFfmpegPreview })
+    $A_TrimStart.Add_TextChanged({ Update-AudioFfmpegPreview })
+    $A_TrimEnd.Add_TextChanged({ Update-AudioFfmpegPreview })
+    $A_CheckNorm.Add_Checked({ Update-AudioFfmpegPreview })
+    $A_CheckNorm.Add_Unchecked({ Update-AudioFfmpegPreview })
+    $A_OutDir.Add_TextChanged({ Update-AudioFfmpegPreview })
+
+    # Map settings changes to preview updates for the Video Tab
+    $V_CheckCustomParams.Add_Checked({ $V_CustomParamsPanel.Visibility = "Visible"; Update-FfmpegPreview })
+    $V_CheckCustomParams.Add_Unchecked({ $V_CustomParamsPanel.Visibility = "Collapsed"; $V_CustomParams.Clear(); Update-FfmpegPreview })
+    foreach ($ctrl in @($V_CFormat, $V_CHWAccel, $V_CCodec, $V_CAudio, $V_CRes, $V_CFPS, $V_CAudioTracks, $V_CVol, $V_CSpeed)) {
+        $ctrl.Add_SelectionChanged({ Update-FfmpegPreview })
+    }
+    $V_CustomParams.Add_TextChanged({ Update-FfmpegPreview })
+    $V_AudioDelay.Add_TextChanged({ Update-FfmpegPreview })
+    $V_TrimStart.Add_TextChanged({ Update-FfmpegPreview })
+    $V_TrimEnd.Add_TextChanged({ Update-FfmpegPreview })
+    $V_CheckTargetSize.Add_Checked({ Update-FfmpegPreview })
+    $V_CheckTargetSize.Add_Unchecked({ Update-FfmpegPreview })
+    $V_TargetSizeMB.Add_TextChanged({ Update-FfmpegPreview })
+    $V_SliderCRF.Add_ValueChanged({ Update-FfmpegPreview })
+    $V_OutDir.Add_TextChanged({ Update-FfmpegPreview })
+
+    # Map settings changes to preview updates for the Downloader Tab
+    $Y_CheckCustomParams.Add_Checked({ $Y_CustomParamsPanel.Visibility = "Visible"; Update-YtDlpPreview })
+    $Y_CheckCustomParams.Add_Unchecked({ $Y_CustomParamsPanel.Visibility = "Collapsed"; $Y_CustomParams.Clear(); Update-YtDlpPreview })
+    
+    # Update quality options dynamically based on Audio vs Video download selection
+    $Y_Type.Add_SelectionChanged({ 
+            $Y_Res.Items.Clear()
+        
+            if ($Y_Type.SelectedIndex -eq 1) { 
+                $Y_VFormat.IsEnabled = $false; $Y_VFormat.Opacity = 0.4
+                $Y_AFormat.IsEnabled = $true; $Y_AFormat.Opacity = 1.0
+            
+                [void]$Y_Res.Items.Add("Best Possible (VBR 0)")
+                [void]$Y_Res.Items.Add("320kbps (High CBR)")
+                [void]$Y_Res.Items.Add("256kbps (Standard CBR)")
+                [void]$Y_Res.Items.Add("192kbps (Medium CBR)")
+                [void]$Y_Res.Items.Add("128kbps (Low CBR)")
+                [void]$Y_Res.Items.Add("96kbps (Very Low CBR)")
+                [void]$Y_Res.Items.Add("64kbps (Very Low)")
+                [void]$Y_Res.Items.Add("48kbps (Minimum)")
+            }
+            else { 
+                $Y_VFormat.IsEnabled = $true; $Y_VFormat.Opacity = 1.0
+                $Y_AFormat.IsEnabled = $false; $Y_AFormat.Opacity = 0.4
+            
+                [void]$Y_Res.Items.Add("Best Possible (4K/8K if available)")
+                [void]$Y_Res.Items.Add("Max 4K (2160p)")
+                [void]$Y_Res.Items.Add("Max 1440p (2K)")
+                [void]$Y_Res.Items.Add("Max 1080p (FHD)")
+                [void]$Y_Res.Items.Add("Max 720p (HD)")
+                [void]$Y_Res.Items.Add("Max 480p (SD)")
+                [void]$Y_Res.Items.Add("Max 360p (Low)")
+                [void]$Y_Res.Items.Add("Max 240p (Very Low)")
+                [void]$Y_Res.Items.Add("Max 144p (Minimum)")
+            }
+        
+            $Y_Res.SelectedIndex = 0
+            Update-YtDlpPreview 
+        })
+    
+    # Disable Image Quality combobox if format is not JPG or WEBP
+    $I_CFormat.Add_SelectionChanged({
+        $fmt = Get-CbVal $I_CFormat
+        if ($fmt -match "JPG" -or $fmt -match "WEBP") {
+            $I_CQual.IsEnabled = $true
+            $I_CQual.Opacity = 1.0
+        } else {
+            $I_CQual.IsEnabled = $false
+            $I_CQual.Opacity = 0.4
+        }
+    })
+    # Trigger it once to set the initial state correctly
+    $I_CFormat.SelectedIndex = -1
+    $I_CFormat.SelectedIndex = 0
+
+    $Y_Type.SelectedIndex = -1
+    $Y_Type.SelectedIndex = 0
+    $Y_Res.Add_SelectionChanged({ Update-YtDlpPreview })
+    $Y_VFormat.Add_SelectionChanged({ Update-YtDlpPreview })
+    $Y_AFormat.Add_SelectionChanged({ Update-YtDlpPreview })
+    $Y_CookieBrowser.Add_SelectionChanged({ Update-YtDlpPreview })
+    $Y_CheckMeta.Add_Click({ Update-YtDlpPreview })
+    $Y_CheckSubs.Add_Click({ Update-YtDlpPreview })
+    $Y_CheckSponsor.Add_Click({ Update-YtDlpPreview })
+    $Y_CheckCookie.Add_Click({ Update-YtDlpPreview })
+    $Y_CheckAutoPoToken.Add_Click({ Update-YtDlpPreview })
+    $Y_Link.Add_TextChanged({ Update-YtDlpPreview })
+    $Y_CustomParams.Add_TextChanged({ Update-YtDlpPreview })
+    $Y_OutDir.Add_TextChanged({ Update-YtDlpPreview })
+
+    # Button event for "Update Tools" - Generates a small WPF Window to fetch WinGet updates
+    $BtnUpdate.Add_Click({
+            # Validate WinGet before showing the update menu
+            if (-not (Get-Command "winget" -ErrorAction SilentlyContinue)) {
+                [void][System.Windows.MessageBox]::Show("Windows Package Manager (winget) is not installed on your system.`n`nUpdating dependencies automatically requires winget.", "Winget Not Found", 0, 16)
+                return
+            }
+
+            [xml]$updXaml = @"
+        <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" 
+                Title="Update Dependencies" Width="350" Height="320" WindowStartupLocation="CenterScreen" Background="{DynamicResource BgBrush}" ResizeMode="NoResize">
+            <Window.Resources>
+                <SolidColorBrush x:Key="BgBrush" Color="$($window.Resources["BgBrush"].Color.ToString())"/>
+                <SolidColorBrush x:Key="TextBrush" Color="$($window.Resources["TextBrush"].Color.ToString())"/>
+                <SolidColorBrush x:Key="AccentBrush" Color="#6366F1"/>
+                <Style TargetType="CheckBox"><Setter Property="Margin" Value="0,10,0,0"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="FontSize" Value="14"/></Style>
+                <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/></Style>
+            </Window.Resources>
+            <StackPanel Margin="20">
+                <TextBlock Text="Select tools to update:" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource AccentBrush}"/>
+                <CheckBox Name="ChkYt" Content="yt-dlp (YouTube Downloader)" IsChecked="True"/>
+                <CheckBox Name="ChkFFmpeg" Content="FFmpeg (Media Converter)" IsChecked="True"/>
+                <CheckBox Name="ChkNode" Content="Node.js (JS Runtime)" IsChecked="True"/>
+                <CheckBox Name="ChkWhisper" Content="Whisper AI (Python Package)" IsChecked="True"/>
+                <CheckBox Name="ChkUpscale" Content="AI Upscaler (Upscayl)" IsChecked="True"/>
+                <Button Name="BtnStartUpdate" Content="Start Update" Height="35" Margin="0,20,0,0" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand" FontWeight="Bold"/>
+            </StackPanel>
+        </Window>
+"@
+            $updWin = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $updXaml))
+        
+            $updWin.FindName("BtnStartUpdate").Add_Click({
+                    $doYt = [bool]$updWin.FindName("ChkYt").IsChecked
+                    $doFF = [bool]$updWin.FindName("ChkFFmpeg").IsChecked
+                    $doNode = [bool]$updWin.FindName("ChkNode").IsChecked
+                    $doWhisper = [bool]$updWin.FindName("ChkWhisper").IsChecked
+                    $doUpscale = [bool]$updWin.FindName("ChkUpscale").IsChecked
+                    $updWin.Close()
+
+                    $BtnRun.IsEnabled = $false
+                    $BtnUpdate.IsEnabled = $false
+                    $LogBox.AppendText("`r`n[UPDATE] Starting dependency updates in background...`r`n")
+                    $StatusText.Text = "Starting updates..."
+                    $PBar.Value = 5
+                    $TaskbarProgress.ProgressState = "Normal"
+            
+                    $ytPath = $script:State.ytdlp
+                    $ytFound = $script:State.ytdlpFound
+            
+                    # Use BackgroundWorker so UI doesn't freeze while updating tools
+                    $bgWorker = New-Object System.ComponentModel.BackgroundWorker
+                    $bgWorker.Add_DoWork({
+                            if ($doYt -and $ytFound) {
+                                $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating yt-dlp..."; $PBar.Value = 20; $TaskbarProgress.ProgressValue = 0.2 })
+                                $p = Start-Process -FilePath $ytPath -ArgumentList "-U" -Wait -WindowStyle Hidden -PassThru
+                                if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] yt-dlp update failed or cancelled.`r`n") }) }
+                                else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] yt-dlp update finished.`r`n") }) }
+                            }
+                            if ($doFF) {
+                                $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating FFmpeg..."; $PBar.Value = 40; $TaskbarProgress.ProgressValue = 0.4 })
+                                $p = Start-Process winget -ArgumentList "upgrade Gyan.FFmpeg --silent --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Hidden -PassThru
+                                if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] FFmpeg update failed or cancelled.`r`n") }) }
+                                else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] FFmpeg update finished.`r`n") }) }
+                            }
+                            if ($doNode) {
+                                $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating Node.js..."; $PBar.Value = 60; $TaskbarProgress.ProgressValue = 0.6 })
+                                $p = Start-Process winget -ArgumentList "upgrade OpenJS.NodeJS --silent --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Hidden -PassThru
+                                if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] Node.js update failed or cancelled.`r`n") }) }
+                                else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] Node.js update finished.`r`n") }) }
+                            }
+                            if ($doWhisper) {
+                                $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating Whisper AI..."; $PBar.Value = 80; $TaskbarProgress.ProgressValue = 0.8 })
+                                if (Get-Command "python" -ErrorAction SilentlyContinue) {
+                                    $p = Start-Process cmd.exe -ArgumentList "/c pip install -U openai-whisper" -Wait -WindowStyle Hidden -PassThru
+                                    if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] Whisper update failed or cancelled.`r`n") }) }
+                                    else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] Whisper update finished.`r`n") }) }
+                                }
+                                else {
+                                    $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] Python not found. Skipping Whisper update.`r`n") })
+                                }
+                            }
+                            if ($doUpscale) {
+                                $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating Upscayl..."; $PBar.Value = 90; $TaskbarProgress.ProgressValue = 0.9 })
+                                $p = Start-Process winget -ArgumentList "upgrade --id Upscayl.Upscayl --silent --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Hidden -PassThru
+                                if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] Upscayl update failed or cancelled.`r`n") }) }
+                                else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] Upscayl update finished.`r`n") }) }
+                            }
+                        })
+            
+                    $bgWorker.Add_RunWorkerCompleted({
+                            $StatusText.Text = "Updates completed!"
+                            $PBar.Value = 100
+                            $TaskbarProgress.ProgressValue = 1.0
+                            $TaskbarProgress.ProgressState = "None"
+                            $LogBox.AppendText("[UPDATE] Dependency update process finished.`r`n")
+                            $BtnRun.IsEnabled = $true
+                            $BtnUpdate.IsEnabled = $true
+                            Find-Tools 
+                        })
+            
+                    $bgWorker.RunWorkerAsync()
+                })
+            [void]$updWin.ShowDialog()
+        })
+
+    # Button event for "Settings" - Generates UI for Theme, Threads, Defaults, etc.
+    $BtnSettings.Add_Click({
+            [xml]$setXaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Width="420" Height="450" WindowStartupLocation="CenterScreen" Background="{DynamicResource BgBrush}" ResizeMode="NoResize">
+    <Window.Resources>
+        <SolidColorBrush x:Key="BgBrush" Color="$($window.Resources["BgBrush"].Color.ToString())"/>
+        <SolidColorBrush x:Key="TextBrush" Color="$($window.Resources["TextBrush"].Color.ToString())"/>
+        <SolidColorBrush x:Key="BorderBrush" Color="$($window.Resources["BorderBrush"].Color.ToString())"/>
+        <SolidColorBrush x:Key="InputBgBrush" Color="$($window.Resources["InputBgBrush"].Color.ToString())"/>
+        <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Margin" Value="0,10,0,5"/></Style>
+        <Style TargetType="CheckBox"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Margin" Value="0,10,0,0"/></Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource InputBgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,5"/>
+        </Style>
+        <Style TargetType="TextBox"><Setter Property="Background" Value="{DynamicResource InputBgBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="8"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
+    </Window.Resources>
+    <StackPanel Margin="20">
+        <TextBlock Text="App Settings" FontSize="18" FontWeight="Bold"/>
+        
+        <TextBlock Text="Theme"/>
+        <ComboBox x:Name="CboTheme"><ComboBoxItem>Dark</ComboBoxItem><ComboBoxItem>Light</ComboBoxItem></ComboBox>
+
+        <TextBlock Text="CPU Thread Limit (FFmpeg)" ToolTip="Limit cores used during conversion to keep PC responsive."/>
+        <ComboBox x:Name="CboThreads">
+            </ComboBox>
+
+        <TextBlock Text="Global Default Output Directory" ToolTip="Leave empty to output in the script's folder."/>
+        <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+            <TextBox x:Name="TxtDefaultOutDir" IsReadOnly="True" Cursor="Arrow" Margin="0,0,5,0"/>
+            <Button x:Name="BtnBrowseOutDir" Grid.Column="1" Content="Browse" Height="30" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+        </Grid>
+
+        <CheckBox x:Name="ChkPlaySound" Content="Play sound when queue finishes" FontWeight="SemiBold"/>
+        <CheckBox x:Name="ChkAlwaysOnTop" Content="Keep window always on top" FontWeight="SemiBold"/>
+        <CheckBox x:Name="ChkAutoDelete" Content="Auto-delete original local files after successful process" FontWeight="Bold" Foreground="#EF4444"/>
+
+        <Button x:Name="BtnSaveSet" Content="Save and Apply" Height="35" Margin="0,25,0,0" Background="#6366F1" Foreground="White" BorderThickness="0" Cursor="Hand" FontWeight="Bold"/>
+    </StackPanel>
+</Window>
+"@
+            $setWin = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $setXaml))
+            
+            $cboTheme = $setWin.FindName("CboTheme"); if ($Config.Theme -eq "Light") { $cboTheme.SelectedIndex = 1 } else { $cboTheme.SelectedIndex = 0 }
+
+            # Dynamically populate thread options based on logical processor count, with "Auto" as default
+            $cboThreads = $setWin.FindName("CboThreads")
+            $maxThreads = [System.Environment]::ProcessorCount
+            if ($maxThreads -le 0) { $maxThreads = 4 }
+            
+            $tAuto = New-Object System.Windows.Controls.ComboBoxItem
+            $tAuto.Content = "Auto (Use All Cores)"
+            [void]$cboThreads.Items.Add($tAuto)
+            
+            for ($i = 1; $i -le $maxThreads; $i++) {
+                $tItem = New-Object System.Windows.Controls.ComboBoxItem
+                $tItem.Content = "$i Thread" + $(if ($i -gt 1) { "s" }else { "" })
+                [void]$cboThreads.Items.Add($tItem)
+            }
+
+            if ($Config.ThreadLimit -eq "Auto" -or $null -eq $Config.ThreadLimit) {
+                $cboThreads.SelectedIndex = 0
+            }
+            else {
+                $found = $false
+                for ($idx = 1; $idx -lt $cboThreads.Items.Count; $idx++) {
+                    if ($cboThreads.Items[$idx].Content -match "^$($Config.ThreadLimit)\s") {
+                        $cboThreads.SelectedIndex = $idx
+                        $found = $true
+                        break
+                    }
+                }
+                if (-not $found) { $cboThreads.SelectedIndex = 0 }
+            }
+
+            $setWin.FindName("TxtDefaultOutDir").Text = $Config.DefaultOutDir
+            $setWin.FindName("ChkPlaySound").IsChecked = $Config.PlaySound
+            $setWin.FindName("ChkAlwaysOnTop").IsChecked = $Config.AlwaysOnTop
+            $setWin.FindName("ChkAutoDelete").IsChecked = $Config.AutoDelete
+
+            $setWin.FindName("BtnBrowseOutDir").Add_Click({ 
+                    $fb = New-Object System.Windows.Forms.FolderBrowserDialog
+                    if ($fb.ShowDialog() -eq "OK") { $setWin.FindName("TxtDefaultOutDir").Text = $fb.SelectedPath } 
+                })
+
+            $setWin.FindName("BtnSaveSet").Add_Click({
+                    $Config.Theme = (Get-CbVal $cboTheme)
+                    
+                    $threadCbVal = (Get-CbVal $cboThreads)
+                    if ($threadCbVal -match "Auto") { $Config.ThreadLimit = "Auto" }
+                    else { $Config.ThreadLimit = ($threadCbVal -split " ")[0] }
+
+                    $Config.DefaultOutDir = $setWin.FindName("TxtDefaultOutDir").Text
+                    $Config.PlaySound = [bool]$setWin.FindName("ChkPlaySound").IsChecked
+                    $Config.AlwaysOnTop = [bool]$setWin.FindName("ChkAlwaysOnTop").IsChecked
+                    $Config.AutoDelete = [bool]$setWin.FindName("ChkAutoDelete").IsChecked
+                    
+                    $Config | ConvertTo-Json -Depth 10 | Set-Content $ConfigFile -Encoding UTF8 #UTF8 to preserve any special chars in paths
+                    Apply-Config
+                    $setWin.Close()
+                })
+            [void]$setWin.ShowDialog()
+        })
+
+    # Read custom stored video presets on application load
+    if (Test-Path $PresetFile) {
+        try {
+            $presets = Get-Content $PresetFile | ConvertFrom-Json
+            foreach ($p in $presets) {
+                $item = New-Object System.Windows.Controls.ComboBoxItem
+                $item.Content = $p.Name
+                $item.Tag = $p
+                [void]$V_Preset.Items.Add($item)
+            }
+        }
+        catch {}
+    }
+
+    # Save custom video encode preset event handler
+    $V_BtnSavePreset.Add_Click({
+            $name = [Microsoft.VisualBasic.Interaction]::InputBox("Name for this preset:", "Save Preset", "My Preset")
+            if ([string]::IsNullOrWhiteSpace($name)) { return }
+            $newPreset = @{ Name = $name; Format = $V_CFormat.SelectedIndex; HW = $V_CHWAccel.SelectedIndex; Codec = $V_CCodec.SelectedIndex; Audio = $V_CAudio.SelectedIndex; Res = $V_CRes.SelectedIndex; Tracks = $V_CAudioTracks.SelectedIndex; CRF = $V_SliderCRF.Value }
+            $presets = @()
+            if (Test-Path $PresetFile) { try { $presets = @(Get-Content $PresetFile | ConvertFrom-Json) } catch {} }
+            $presets += $newPreset
+            $presets | ConvertTo-Json -Depth 10 | Set-Content $PresetFile -Encoding UTF8 #UTF8 to preserve any special chars in preset names
+            $item = New-Object System.Windows.Controls.ComboBoxItem; $item.Content = $name; $item.Tag = (New-Object PSObject -Property $newPreset)
+            [void]$V_Preset.Items.Add($item); $V_Preset.SelectedItem = $item
+            [void][System.Windows.MessageBox]::Show("Preset '$name' was successfully saved!", "Info", 0, 64)
+        })
+
+    $V_Preset.Add_SelectionChanged({
+            if ($V_Preset.SelectedItem -ne $null -and $V_Preset.SelectedItem.Tag) {
+                $p = $V_Preset.SelectedItem.Tag
+                $V_CFormat.SelectedIndex = $p.Format; $V_CHWAccel.SelectedIndex = $p.HW; $V_CCodec.SelectedIndex = $p.Codec
+                $V_CAudio.SelectedIndex = $p.Audio; $V_CRes.SelectedIndex = $p.Res; $V_CAudioTracks.SelectedIndex = $p.Tracks; $V_SliderCRF.Value = $p.CRF
+            }
+            else {
+                $idx = $V_Preset.SelectedIndex
+                if ($idx -eq 1) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 1; $V_SliderCRF.Value = 23 }
+                elseif ($idx -eq 2) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 2; $V_SliderCRF.Value = 28 }
+            }
+        })
+
+    # Core function for Drag & Drop parsing: resolves files inside directories or directly checks regex match
+    function Add-ToList([System.Windows.Controls.ListBox]$List, [string[]]$Paths, [string]$ExtRegex) {
+        $existingItems = @{}
+        foreach ($item in $List.Items) { $existingItems[$item.ToString()] = $true }
+
+        foreach ($p in $Paths) {
+            $pStr = [string]$p
+            if ([System.IO.Directory]::Exists($pStr)) { 
+                try {
+                    $files = [System.IO.Directory]::GetFiles($pStr, "*.*", [System.IO.SearchOption]::TopDirectoryOnly)
+                    foreach ($f in $files) {
+                        if ($f -match $ExtRegex -and -not $existingItems.ContainsKey($f)) { 
+                            [void]$List.Items.Add($f)
+                            $existingItems[$f] = $true
+                        }
+                    }
+                }
+                catch {}
+            } 
+            elseif ([System.IO.File]::Exists($pStr)) { 
+                if ($pStr -match $ExtRegex -and -not $existingItems.ContainsKey($pStr)) { 
+                    [void]$List.Items.Add($pStr) 
+                    $existingItems[$pStr] = $true
+                } 
+            }
+        }
+        
+        if ($List.Items.Count -gt 0 -and $List.SelectedIndex -eq -1) { $List.SelectedIndex = 0 }
+        Update-AllPreviews
+    }
+
+    # Setup Drag and Drop events for generic UI elements
+    $DragEnterHandler = [System.Windows.DragEventHandler] { $_.Effects = [System.Windows.DragDropEffects]::Copy; $_.Handled = $true; $_.Source.Background = $window.Resources["DragBrush"] }
+    $DragLeaveHandler = [System.Windows.DragEventHandler] { $_.Source.Background = $window.Resources["InputBgBrush"] }
+    
+    $A_InList.Add_PreviewDragOver($DragEnterHandler); $A_InList.Add_DragLeave($DragLeaveHandler)
+    $A_InList.Add_Drop([System.Windows.DragEventHandler] { 
+            $_.Source.Background = $window.Resources["InputBgBrush"]
+            if ($_.Data.GetDataPresent([System.Windows.DataFormats]::FileDrop)) { 
+                $regex = if ($A_CheckExtract.IsChecked) { "\.(mp3|wav|m4a|flac|ogg|aac|mp4|mkv|avi|mov|webm)$" } else { "\.(mp3|wav|m4a|flac|ogg|aac)$" }
+                Add-ToList $A_InList ($_.Data.GetData([System.Windows.DataFormats]::FileDrop)) $regex
+            } 
+        })
+
+    $V_InList.Add_PreviewDragOver($DragEnterHandler); $V_InList.Add_DragLeave($DragLeaveHandler)
+    $V_InList.Add_Drop([System.Windows.DragEventHandler] { 
+            $_.Source.Background = $window.Resources["InputBgBrush"]; 
+            if ($_.Data.GetDataPresent([System.Windows.DataFormats]::FileDrop)) { 
+                Add-ToList $V_InList ($_.Data.GetData([System.Windows.DataFormats]::FileDrop)) "\.(mp4|mkv|avi|mov|webm)$" 
+            } 
+        })
+
+    $I_InList.Add_PreviewDragOver($DragEnterHandler); $I_InList.Add_DragLeave($DragLeaveHandler)
+    $I_InList.Add_Drop([System.Windows.DragEventHandler] { 
+            $_.Source.Background = $window.Resources["InputBgBrush"]; 
+            if ($_.Data.GetDataPresent([System.Windows.DataFormats]::FileDrop)) { 
+                Add-ToList $I_InList ($_.Data.GetData([System.Windows.DataFormats]::FileDrop)) "\.(jpg|jpeg|png|webp|bmp|gif|heic)$" 
+            } 
+        })
+
+    $TextBoxDropHandler = [System.Windows.DragEventHandler] {
+        $_.Source.Background = $window.Resources["InputBgBrush"]
+        if ($_.Data.GetDataPresent([System.Windows.DataFormats]::FileDrop)) {
+            $files = $_.Data.GetData([System.Windows.DataFormats]::FileDrop)
+            if ($files.Count -gt 0) { $_.Source.Text = $files[0] }
+        }
+    }
+
+    # Helper function to easily bind right-click Context Menus to ListBoxes
+    function Bind-ContextMenu($ListBox, $BtnRemove, $BtnClear) {
+        $BtnRemove.Add_Click({
+                $selected = @($ListBox.SelectedItems)
+                # Clear UI selection first to prevent multi-select redraw lag
+                $ListBox.SelectedItems.Clear()
+                $ListBox.Dispatcher.InvokeAsync([Action] {
+                        foreach ($item in $selected) { $ListBox.Items.Remove($item) }
+                        Update-AllPreviews
+                    }, [System.Windows.Threading.DispatcherPriority]::Background)
+            })
+        $BtnClear.Add_Click({ 
+                $ListBox.Items.Clear()
+                Update-AllPreviews
+            })
+    }
+
+    Bind-ContextMenu $A_InList $A_CtxRemove $A_CtxClear
+    Bind-ContextMenu $V_InList $V_CtxRemove $V_CtxClear
+    Bind-ContextMenu $I_InList $I_CtxRemove $I_CtxClear
+
+    # Manual Add File Click handlers utilizing Windows Forms OpenFileDialog
+    $A_BtnAdd.Add_Click({ 
+            $fd = New-Object System.Windows.Forms.OpenFileDialog
+            $fd.Multiselect = $true
+            if ($A_CheckExtract.IsChecked) {
+                $fd.Filter = "Audio & Video|*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4;*.mkv;*.avi;*.mov;*.webm|All|*.*"
+            }
+            else {
+                $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac|All|*.*"
+            }
+            if ($fd.ShowDialog() -eq "OK") { Add-ToList $A_InList $fd.FileNames ".*" } 
+        })
+    $V_BtnAdd.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Multiselect = $true; $fd.Filter = "Video|*.mp4;*.mkv;*.avi;*.mov;*.webm|All|*.*"; if ($fd.ShowDialog() -eq "OK") { Add-ToList $V_InList $fd.FileNames ".*" } })
+    $I_BtnAdd.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Multiselect = $true; $fd.Filter = "Images|*.jpg;*.jpeg;*.png;*.webp;*.bmp;*.gif;*.heic|All|*.*"; if ($fd.ShowDialog() -eq "OK") { Add-ToList $I_InList $fd.FileNames ".*" } })
+    
+    $A_BtnClear.Add_Click({ $A_InList.Items.Clear(); Update-AudioFfmpegPreview })
+    $V_BtnClear.Add_Click({ $V_InList.Items.Clear(); Update-FfmpegPreview })
+    $I_BtnClear.Add_Click({ $I_InList.Items.Clear() })
+
+    # Helper function for assigning an Output Directory
+    function Pick-OutDir([System.Windows.Controls.TextBox]$Box) { $fb = New-Object System.Windows.Forms.FolderBrowserDialog; if ($fb.ShowDialog() -eq "OK") { $Box.Text = $fb.SelectedPath; Update-AllPreviews } }
+    $A_BtnOut.Add_Click({ Pick-OutDir $A_OutDir }); $V_BtnOut.Add_Click({ Pick-OutDir $V_OutDir }); $I_BtnOut.Add_Click({ Pick-OutDir $I_OutDir }); $Y_BtnOut.Add_Click({ Pick-OutDir $Y_OutDir })
+    $S_BtnUpscaleOut.Add_Click({ Pick-OutDir $S_UpscaleOutDir })
+
+    $M_BtnVid.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Video|*.mp4;*.mkv;*.avi;*.webm|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $M_InVideo.Text = $fd.FileName } })
+    $M_BtnAud.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.aac|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $M_InAudio.Text = $fd.FileName } })
+    $M_BtnOut.Add_Click({ $sd = New-Object System.Windows.Forms.SaveFileDialog; $sd.Filter = "MP4 Video|*.mp4|MKV Video|*.mkv"; if ($sd.ShowDialog() -eq "OK") { $M_OutFile.Text = $sd.FileName } })
+
+    $Y_BtnCookie.Add_Click({
+            $fd = New-Object System.Windows.Forms.OpenFileDialog
+            $fd.Filter = "Text Files|*.txt|All Files|*.*"
+            $fd.Title = "Select cookies.txt"
+            if ($fd.ShowDialog() -eq "OK") {
+                $Y_CookiePath.Text = $fd.FileName
+                $Y_CheckCookie.IsChecked = $true
+            }
+        })
+
+    $V_BtnSub.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Subtitles|*.srt|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $V_SubPath.Text = $fd.FileName } })
+    
+    # Logic to parse video and dynamically create a 6-frame preview thumbnail timeline
+    $V_BtnGenPreview.Add_Click({
+            $file = $V_InList.SelectedItem
+            if (-not $file -and $V_InList.Items.Count -gt 0) { $file = $V_InList.Items[0] }
+            if (-not $file) { [void][System.Windows.MessageBox]::Show("Select a video in the queue first.", "Missing Input", 0, 48); return }
+
+            $V_PreviewStack.Children.Clear()
+            $V_PreviewScroll.Visibility = "Visible"
+            $V_BtnGenPreview.IsEnabled = $false
+            $V_BtnGenPreview.Content = "Generating..."
+            $window.Cursor = [System.Windows.Input.Cursors]::Wait
+
+            $bgWorker = New-Object System.ComponentModel.BackgroundWorker
+            $bgWorker.Add_DoWork({
+                    $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+                    $pinfoDur.FileName = $script:State.ffprobe
+                    $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$file`""
+                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                    $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                    $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+                    $pDur.WaitForExit()
+
+                    $totalSecs = 0
+                    if (-not [double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs) -or $totalSecs -le 0) {
+                        return
+                    }
+
+                    for ($i = 1; $i -le 6; $i++) {
+                        $percent = $i * 15
+                        $targetSec = $totalSecs * ($percent / 100.0)
+                        $ts = [TimeSpan]::FromSeconds($targetSec)
+                        $timeStr = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+
+                        $outThumb = Join-Path $env:TEMP "thumb_$i.jpg"
+                        $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+                        $pinfo.FileName = $script:State.ffmpeg
+                        $pinfo.Arguments = "-y -hide_banner -ss $timeStr -i `"$file`" -frames:v 1 -q:v 2 -vf scale=160:-1 `"$outThumb`""
+                        $pinfo.UseShellExecute = $false; $pinfo.CreateNoWindow = $true
+                        $p = [System.Diagnostics.Process]::Start($pinfo)
+                        $p.WaitForExit()
+
+                        if (Test-Path $outThumb) {
+                            $window.Dispatcher.Invoke([Action] {
+                                    $img = New-Object System.Windows.Controls.Image
+                                    $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
+                                    $bmp.BeginInit()
+                                    $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+                                    $bmp.CreateOptions = [System.Windows.Media.Imaging.BitmapCreateOptions]::IgnoreImageCache
+                                    $bmp.UriSource = New-Object System.Uri($outThumb)
+                                    $bmp.EndInit()
+                                    $bmp.Freeze()
+                                    $img.Source = $bmp
+                                    $img.Height = 60
+                                    $img.Margin = New-Object System.Windows.Thickness(0, 0, 5, 0)
+                                    $img.ToolTip = "Position: $percent% ($timeStr)"
+                                    [void]$V_PreviewStack.Children.Add($img)
+                                })
+                        }
+                    }
+                })
+            $bgWorker.Add_RunWorkerCompleted({
+                    $V_BtnGenPreview.IsEnabled = $true
+                    $V_BtnGenPreview.Content = "Generate Visual Timeline"
+                    $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+                })
+            $bgWorker.RunWorkerAsync()
+        })
+
+    $V_SliderCRF.Add_ValueChanged({ 
+            $val = [math]::Round($V_SliderCRF.Value)
+            $V_CRFText.Text = $val 
+            if ($V_CRFDesc) {
+                if ($val -le 20) { $V_CRFDesc.Text = "High Quality (Large file)" }
+                elseif ($val -le 25) { $V_CRFDesc.Text = "Balanced (Standard)" }
+                else { $V_CRFDesc.Text = "Compressed (Small file)" }
+            }
+        })
+    
+    $BtnShow.Add_Click({ 
+            $dir = $script:State.lastOutDir
+            if (-not [string]::IsNullOrWhiteSpace($dir) -and (Test-Path -LiteralPath $dir)) { 
+                [void](Start-Process "explorer.exe" -ArgumentList "`"$dir`"")
+            } 
+        })
+
+    # Execute ffprobe to retrieve JSON metadata for the currently selected file and display in a popup window
+    function Show-MediaInfoDialog([string]$FilePath, [System.Windows.Controls.Button]$Btn) {
+        if (-not $FilePath -or -not (Test-Path $FilePath)) { [void][System.Windows.MessageBox]::Show("Please select a file from the list.", "Info", 0, 48); return }
+        
+        $Btn.IsEnabled = $false
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
+        $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
+        
+        try {
+            $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+            if ($script:State.ffprobeFound) { 
+                $pinfo.FileName = $script:State.ffprobe
+                $pinfo.Arguments = "-v quiet -print_format json -show_format -show_streams `"$FilePath`"" 
+            }
+            else { 
+                $pinfo.FileName = $script:State.ffmpeg
+                $pinfo.Arguments = "-hide_banner -i `"$FilePath`"" 
+            }
+            $pinfo.UseShellExecute = $false; $pinfo.RedirectStandardError = $true; $pinfo.RedirectStandardOutput = $true; $pinfo.CreateNoWindow = $true
+            
+            $p = [System.Diagnostics.Process]::Start($pinfo)
+            $p.WaitForExit()
+            
+            $infoText = if ($script:State.ffprobeFound) { $p.StandardOutput.ReadToEnd() } else { $p.StandardError.ReadToEnd() }
+        }
+        finally {
+            $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+            $Btn.IsEnabled = $true
+        }
+        
+        [xml]$infoXaml = @"
+        <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Title="Media Information" Width="650" Height="500" WindowStartupLocation="CenterScreen">
+            <Grid Margin="15"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                <TextBlock Name="InfoLabel" Text="File Details" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                <TextBox Name="InfoTextBox" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="13" Padding="10"/>
+            </Grid>
+        </Window>
+"@
+        $infoWindow = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $infoXaml))
+        
+        $infoWindow.Background = $window.Resources["BgBrush"]
+        $infoWindow.FindName("InfoLabel").Foreground = $window.Resources["TextBrush"]
+        $tb = $infoWindow.FindName("InfoTextBox")
+        $tb.Background = $window.Resources["InputBgBrush"]
+        $tb.Foreground = $window.Resources["TextBrush"]
+        $tb.Text = $infoText
+        
+        [void]$infoWindow.ShowDialog()
+    }
+    
+    $A_BtnInfo.Add_Click({ Show-MediaInfoDialog $A_InList.SelectedItem $A_BtnInfo })
+    $V_BtnInfo.Add_Click({ Show-MediaInfoDialog $V_InList.SelectedItem $V_BtnInfo })
+    $I_BtnInfo.Add_Click({ Show-MediaInfoDialog $I_InList.SelectedItem $I_BtnInfo })
+
+    # Placeholder logic for TextBoxes
+    $A_TrimStart.Add_GotFocus({ if ($A_TrimStart.Text -eq "00:00:00") { $A_TrimStart.Text = "" } }); $A_TrimStart.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($A_TrimStart.Text)) { $A_TrimStart.Text = "00:00:00" } })
+    $A_TrimEnd.Add_GotFocus({ if ($A_TrimEnd.Text -eq "00:00:00") { $A_TrimEnd.Text = "" } }); $A_TrimEnd.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($A_TrimEnd.Text)) { $A_TrimEnd.Text = "00:00:00" } })
+    $V_TrimStart.Add_GotFocus({ if ($V_TrimStart.Text -eq "00:00:00") { $V_TrimStart.Text = "" } }); $V_TrimStart.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($V_TrimStart.Text)) { $V_TrimStart.Text = "00:00:00" } })
+    $V_TrimEnd.Add_GotFocus({ if ($V_TrimEnd.Text -eq "00:00:00") { $V_TrimEnd.Text = "" } }); $V_TrimEnd.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($V_TrimEnd.Text)) { $V_TrimEnd.Text = "00:00:00" } })
+    
+    $Y_Link.Add_GotKeyboardFocus({ if ($Y_Link.Text -eq "https://") { $Y_Link.Text = "" } })
+    $Y_Link.Add_LostKeyboardFocus({ if ([string]::IsNullOrWhiteSpace($Y_Link.Text)) { $Y_Link.Text = "https://" } })
+
+    # Validates if an inputted URL is supported by yt-dlp by referencing the markdown from GitHub
+    function Check-YtDlpSupport([string]$link) {
+        $isValidUrl = $false
+        try {
+            if ($link -match "^(https?://|www\.)") {
+                $checkUri = [System.Uri]($link -replace "^www\.", "https://www.")
+                if ($checkUri.Host.Contains(".")) { $isValidUrl = $true }
+            }
+        }
+        catch {}
+
+        if (-not $isValidUrl) {
+            [void][System.Windows.MessageBox]::Show("Please enter a valid URL (e.g., https://youtube.com/...)", "Invalid URL", 0, 16)
+            return $false
+        }
+
+        $isSupported = $false
+        try {
+            $uri = [System.Uri]($link -replace "^www\.", "https://www.")
+            $hostName = $uri.Host.ToLower() -replace "^www\.", ""
+            
+            $domainParts = $hostName -split '\.'
+            $domainPart = $hostName
+            if ($domainParts.Count -ge 2) {
+                if ($domainParts[-2].Length -le 3 -and $domainParts.Count -ge 3) {
+                    $domainPart = $domainParts[-3] 
+                }
+                else {
+                    $domainPart = $domainParts[-2] 
+                }
+            }
+            if ($hostName -match "youtu\.be") { $domainPart = "youtube" }
+
+            $commonSites = @("youtube", "youtu", "arte", "vimeo", "twitch", "facebook", "instagram", "twitter", "x", "tiktok", "soundcloud", "dailymotion", "reddit", "kick", "rumble")
+        
+            if ($commonSites -contains $domainPart -or $commonSites -contains $hostName) {
+                $isSupported = $true
+            }
+
+            if (-not $isSupported) {
+                # Fetch supported sites list to cache it, preventing repetitive slow HTTP requests
+                if ($null -eq $script:State.SupportedSitesCache -or $script:State.SupportedSitesCache.Length -eq 0) {
+                    try {
+                        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                        $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
+                        $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing
+                    }
+                    catch { $script:State.SupportedSitesCache = "fallback_offline" }
+                }
+            
+                if ($script:State.SupportedSitesCache -is [array]) {
+                    if ($script:State.SupportedSitesCache -match $domainPart) { $isSupported = $true }
+                }
+                else {
+                    if ($script:State.SupportedSitesCache -match "(?i)\b$domainPart\b") { $isSupported = $true }
+                }
+            }
+        }
+        catch { $isSupported = $true }
+
+        if (-not $isSupported) {
+            $win = New-Object System.Windows.Window
+            $win.Title = "Unsupported Site"
+            $win.SizeToContent = "WidthAndHeight"; $win.WindowStartupLocation = "CenterScreen"
+            $win.Background = $window.Resources["BgBrush"]; $win.ResizeMode = "NoResize"
+        
+            $sp = New-Object System.Windows.Controls.StackPanel
+            $sp.Margin = 20
+        
+            $tb = New-Object System.Windows.Controls.TextBlock
+            $tb.TextWrapping = "Wrap"; $tb.MaxWidth = 450; $tb.Margin = "0,0,0,15"
+            $tb.Foreground = $window.Resources["TextBrush"]
+            $tb.Inlines.Add("The site '$domainPart' might not be officially supported.`n`nCheck the full list here:`n")
+        
+            $hl = New-Object System.Windows.Documents.Hyperlink
+            $hl.NavigateUri = "https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md"
+            $hl.Inlines.Add("yt-dlp Supported Sites List")
+            $hl.Add_Click({ [void](Start-Process $hl.NavigateUri) })
+            $tb.Inlines.Add($hl)
+            $tb.Inlines.Add("`n`nDo you want to attempt it anyway? It might fail due to DRM protection or generic extractor limits.")
+        
+            [void]$sp.Children.Add($tb)
+
+            $btnSp = New-Object System.Windows.Controls.StackPanel
+            $btnSp.Orientation = "Horizontal"; $btnSp.HorizontalAlignment = "Right"
+
+            $btnTry = New-Object System.Windows.Controls.Button
+            $btnTry.Content = "Try Anyway"; $btnTry.Width = 100; $btnTry.Height = 35; $btnTry.Margin = "0,0,10,0"
+            $btnTry.Background = "#10B981"; $btnTry.Foreground = "White"; $btnTry.BorderThickness = 0; $btnTry.Cursor = "Hand"
+            $btnTry.Add_Click({ $win.DialogResult = $true; $win.Close() })
+
+            $btnCancel = New-Object System.Windows.Controls.Button
+            $btnCancel.Content = "Cancel"; $btnCancel.Width = 100; $btnCancel.Height = 35
+            $btnCancel.Background = "#6B7280"; $btnCancel.Foreground = "White"; $btnCancel.BorderThickness = 0; $btnCancel.Cursor = "Hand"
+            $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+            [void]$btnSp.Children.Add($btnTry); [void]$btnSp.Children.Add($btnCancel)
+            [void]$sp.Children.Add($btnSp)
+            $win.Content = $sp
+
+            if ($win.ShowDialog() -ne $true) { 
+                return $false 
+            }
+        }
+        return $true
+    }
+
+    # Retrieves JSON data from the entered URL to display title, duration, and channel
+    $Y_BtnPreview.Add_Click({
+            $link = $Y_Link.Text.Trim()
+            
+            if ([string]::IsNullOrWhiteSpace($link) -or $link -eq "https://") { 
+                [void][System.Windows.MessageBox]::Show("Please enter a valid URL to fetch.", "Missing URL", 0, 48)
+                return 
+            }
+            if (-not $script:State.ytdlpFound) {
+                [void][System.Windows.MessageBox]::Show("yt-dlp.exe not found!", "Missing Tool", 0, 48)
+                return
+            }
+
+            $Y_BtnPreview.IsEnabled = $false
+            $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
+
+            if (-not (Check-YtDlpSupport $link)) {
+                $Y_BtnPreview.IsEnabled = $true
+                return
+            }
+
+            $window.Cursor = [System.Windows.Input.Cursors]::Wait
+            $StatusText.Text = "Fetching info..."
+            $StatusText.Foreground = "#6366F1"
+            $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
+
+            $tempJson = Join-Path $env:TEMP "yt_info.json"
+            $tempErr = Join-Path $env:TEMP "yt_info_err.log"
+            if (Test-Path $tempJson) { Remove-Item $tempJson -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $tempErr) { Remove-Item $tempErr -Force -ErrorAction SilentlyContinue }
+
+            try {
+                $argString = "--dump-json --no-warnings --no-playlist "
+                if ($Y_CheckCookie.IsChecked) {
+                    if ($Y_CookiePath.Text -and (Test-Path $Y_CookiePath.Text)) { $argString += "--cookies `"$($Y_CookiePath.Text)`" " }
+                    else { $argString += "--cookies-from-browser $(Get-CbVal $Y_CookieBrowser) " }
+                }
+                $extArgs = "youtube:player_client=web,default"
+                if (-not $Y_CheckAutoPoToken.IsChecked) {
+                    $poToken = if ($Y_PoToken.Text) { $Y_PoToken.Text.Trim() } else { "" }
+                    if ($poToken) { $extArgs += ";po_token=web+$poToken" }
+                }
+                $argString += "--extractor-args `"$extArgs`" `"$link`""
+
+                [void](Start-Process -FilePath $script:State.ytdlp -ArgumentList $argString -WindowStyle Hidden -RedirectStandardOutput $tempJson -RedirectStandardError $tempErr -Wait)
+
+                $jsonOut = if (Test-Path $tempJson) { Get-Content $tempJson -Raw -Encoding UTF8 } else { "" }
+                $errOut = if (Test-Path $tempErr) { Get-Content $tempErr -Raw -Encoding UTF8 } else { "" }
+
+                if (-not [string]::IsNullOrWhiteSpace($jsonOut)) {
+                    try {
+                        $videoData = $jsonOut | ConvertFrom-Json
+                        if ($videoData -is [array]) { $videoData = $videoData[0] }
+                
+                        $title = if ($videoData.title) { $videoData.title } else { "Unknown Title" }
+                        $dur = if ($videoData.duration_string) { $videoData.duration_string } else { "Unknown Duration" }
+                        $chan = if ($videoData.uploader) { $videoData.uploader } else { "Unknown Uploader" }
+                
+                        [void][System.Windows.MessageBox]::Show("Title: $title`nDuration: $dur`nChannel: $chan", "Video Info", 0, 64)
+                    }
+                    catch {
+                        [void][System.Windows.MessageBox]::Show("Could not cleanly parse info.`n`nRaw Output: $( $jsonOut.Substring(0, [math]::Min($jsonOut.Length, 300)) )...", "Preview Parsing Error", 0, 48)
+                    }
+                }
+                else {
+                    $errMsg = if ([string]::IsNullOrWhiteSpace($errOut)) { "Unknown error. Link might be fully protected or invalid." } else { $errOut }
+                    [void][System.Windows.MessageBox]::Show("Could not fetch info.`n`nError Details:`n$errMsg", "Preview Error", 0, 48)
+                }
+            }
+            catch {
+                [void][System.Windows.MessageBox]::Show("Process execution failed: $($_.Exception.Message)", "Error", 0, 16)
+            }
+            finally {
+                $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+                $Y_BtnPreview.IsEnabled = $true
+                $StatusText.Text = "Ready."
+                $StatusText.Foreground = $window.Resources["TextBrush"]
+            }
+        })
+
+    # ==============================================================================
+    # 8. TASK SCHEDULING & PROCESS MONITORING
+    # ==============================================================================
+    
+    # Define polling timer to read external command output and translate to UI
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromMilliseconds(250)
+
+    # Completely terminate a process and its child processes
+    function Kill-ProcessTree($proc) {
+        if ($proc -and -not $proc.HasExited) {
+            try { 
+                [void](Start-Process "taskkill.exe" -ArgumentList "/PID $($proc.Id) /T /F" -WindowStyle Hidden -Wait)
+            } 
+            catch { try { $proc.Kill() } catch {} }
+        }
+    }
+    
+    # Core loop logic for parsing the global task queue
+    function Process-NextJob {
+        if ($script:State.CurrentJobIndex -ge $script:State.BatchQueue.Count) {
+            if ($timer) { $timer.Stop() }
+            $BtnCancel.IsEnabled = $false
+            $BtnSkip.IsEnabled = $false
+            $TxtETA.Text = "ETA: --:--"
+            $TaskbarProgress.ProgressState = "None"
+            
+            if ($LogBox.Text -match "\[ERROR\]") {
+                $StatusText.Text = "Finished with errors! Check the live log."
+                $StatusText.Foreground = "#EF4444" 
+                $TaskbarProgress.ProgressState = "Error"
+            }
+            elseif ($LogBox.Text -match "\[CANCEL\]") {
+                $StatusText.Text = "Process cancelled."
+                $StatusText.Foreground = "#EF4444" 
+                $TaskbarProgress.ProgressState = "None"
+            }
+            else {
+                $StatusText.Text = "Successfully completed! ($($script:State.BatchQueue.Count) jobs processed)"
+                $StatusText.Foreground = "#10B981" 
+            }
+            
+            $PBar.Value = 100; $BtnRun.IsEnabled = $true; $BtnUpdate.IsEnabled = $true; $BtnShow.Visibility = "Visible"
+            
+            Write-ConvertLog "=== Queue Completed ==="
+
+            if ($Config.PlaySound) {
+                [System.Media.SystemSounds]::Asterisk.Play()
+            }
+            
+            Save-Queue
+            return
+        }
+
+        Save-Queue
+
+        $job = $script:State.BatchQueue[$script:State.CurrentJobIndex]
+        $StatusText.Text = "Processing job $($script:State.CurrentJobIndex + 1) of $($script:State.BatchQueue.Count)..."
+        $StatusText.Foreground = "#6366F1"; $PBar.Value = 0; $LogBox.Clear(); $TxtETA.Text = "ETA: Calc..."
+        $TaskbarProgress.ProgressState = "Normal"
+        $TaskbarProgress.ProgressValue = 0.0
+
+        try {
+            if (Test-Path $script:State.tempLog) { Remove-Item $script:State.tempLog -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $script:State.tempLogErr) { Remove-Item $script:State.tempLogErr -Force -ErrorAction SilentlyContinue }
+            $script:State.lastLogPos = 0; $script:State.totalDuration = 0
+            
+            $rawArgs = @()
+            if (-not $job.IsYtDlp -and $job.CustomTool -notmatch "python.exe|upscayl") {
+                if ($Config.ThreadLimit -and $Config.ThreadLimit -ne "Auto") {
+                    $rawArgs += @("-threads", $Config.ThreadLimit)
+                }
+            }
+            foreach ($arg in $job.Args) { $rawArgs += $arg.ToString().Trim() }
+
+            $argString = ($rawArgs | ForEach-Object {
+                $str = [string]$_
+                if ([string]::IsNullOrWhiteSpace($str)) { return '""' }
+                
+                # If it's already quoted, leave it alone
+                if ($str -match '^".*"$' -or $str -match "^'.*'$") { return $str }
+
+                # CRITICAL FIX: Quote strings that contain spaces OR FFmpeg special characters (:=)
+                # We include : and = in the regex so complex filters are wrapped in double quotes
+                if ($str -match '[\s&^<>|%!=:]') {
+                    # Escape existing double quotes and wrap the whole thing in double quotes for CMD
+                    return "`"$($str -replace '"', '\"')`""
+                }
+                return $str
+            }) -join " "
+
+            $toolPath = if ($job.IsYtDlp) { $script:State.ytdlp } 
+            elseif ($job.CustomTool) { $job.CustomTool } 
+            else { $script:State.ffmpeg }
+
+            Write-ConvertLog "Executing: $toolPath $argString"
+
+            if (Test-Path $script:State.tempLog) { Remove-Item $script:State.tempLog -Force -ErrorAction SilentlyContinue }
+        
+            $combinedLog = $script:State.tempLog
+
+            # Wrapper logic allows catching stdout and stderr efficiently into one file that the timer polling can read
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = "cmd.exe"
+
+            # This ensures FFmpeg runs inside the TEMP folder so it can find 'transforms.trf'
+            if ($job.WorkDir) { $psi.WorkingDirectory = $job.WorkDir }
+            else { $psi.WorkingDirectory = $ScriptDir }        
+
+            $psi.Arguments = "/c `"`"$toolPath`" $argString > `"$combinedLog`" 2>&1`""
+        
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.WindowStyle = "Hidden"
+
+            try {
+                $script:State.p = [System.Diagnostics.Process]::Start($psi)
+            }
+            catch {
+                $LogBox.AppendText("[FATAL ERROR] Could not start CMD wrapper: $($_.Exception.Message)`r`n")
+                return
+            }
+
+            $timer.Start()
+        }
+        
+        catch { 
+            Write-CrashLog "Failed processing job $($script:State.CurrentJobIndex + 1): $($_.Exception.Message)`r`n$($_.ScriptStackTrace)"
+            $BtnCancel.IsEnabled = $false
+            $BtnSkip.IsEnabled = $false
+            $BtnRun.IsEnabled = $true
+            $BtnUpdate.IsEnabled = $true
+            $script:State.CurrentJobIndex++
+            [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ Process-NextJob })
+        }
+    }
+
+    # Routine logic for polling output file of cmd wrapper and translating string matches to progress bar
+    $timer.Add_Tick({
+            if (Test-Path -LiteralPath $script:State.tempLog) {
+                try {
+                    $fs = New-Object System.IO.FileStream($script:State.tempLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                    $reader = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+                    $reader.BaseStream.Position = $script:State.lastLogPos
+                    $newText = $reader.ReadToEnd()
+                    $script:State.lastLogPos = $reader.BaseStream.Position
+                    $reader.Close()
+                    $fs.Close()
+
+                    if (-not [string]::IsNullOrEmpty($newText)) {
+                        $LogBox.AppendText($newText)
+                        if ($CbAutoScrollLog.IsChecked) {
+                            $LogBox.ScrollToEnd()
+                        }
+                    
+                        $job = $script:State.BatchQueue[$script:State.CurrentJobIndex]
+
+                        # Detect FFMPEG duration parameter to calculate percentage
+                        if ($script:State.totalDuration -eq 0 -and $newText -match "Duration:\s*(\d{2}:\d{2}:\d{2})") {
+                            try { $script:State.totalDuration = [TimeSpan]::Parse($matches[1]).TotalSeconds } catch {}
+                        }
+
+                        $rxTime = [System.Text.RegularExpressions.Regex]::new("time=(\d{2}:\d{2}:\d{2})", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+                        $timeMatches = $rxTime.Matches($newText)
+                        if ($timeMatches.Count -gt 0 -and $script:State.totalDuration -gt 0) {
+                            $lastMatch = $timeMatches[$timeMatches.Count - 1].Groups[1].Value
+                            try {
+                                $curr = [TimeSpan]::Parse($lastMatch).TotalSeconds
+                                $PBar.Value = ($curr / $script:State.totalDuration) * 100
+                                $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
+                            
+                                $rxSpeed = [System.Text.RegularExpressions.Regex]::new("speed=\s*([\d\.]+)x", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+                                $speedMatches = $rxSpeed.Matches($newText)
+                                if ($speedMatches.Count -gt 0) {
+                                    $speed = [double]::Parse($speedMatches[$speedMatches.Count - 1].Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture)
+                                    if ($speed -gt 0) {
+                                        $remainingSecs = ($script:State.totalDuration - $curr) / $speed
+                                        if ($remainingSecs -gt 0) {
+                                            $ts = [TimeSpan]::FromSeconds($remainingSecs)
+                                            $TxtETA.Text = "ETA: $( '{0:D2}:{1:D2}:{2:D2}' -f $ts.Hours, $ts.Minutes, $ts.Seconds )"
+                                        }
+                                    }
+                                }
+                            }
+                            catch {}
+                        }
+                        elseif ($job.IsYtDlp) {
+                            # Regex logic to capture yt-dlp percentage and string ETA
+                            $percentMatches = [regex]::Matches($newText, "\[download\]\s+(\d+\.?\d*)%")
+                            if ($percentMatches.Count -gt 0) {
+                                $PBar.Value = [math]::Round([double]$percentMatches[$percentMatches.Count - 1].Groups[1].Value)
+                                $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
+                            }
+                            $etaMatches = [regex]::Matches($newText, "ETA\s+(\d+:\d+)")
+                            if ($etaMatches.Count -gt 0) {
+                                $TxtETA.Text = "ETA: " + $etaMatches[$etaMatches.Count - 1].Groups[1].Value
+                            }
+                        }
+                        elseif ($newText -match "(\d+\.\d+)%") {
+                            # Regex Logic for Upscayl percentage 
+                            $upscaleMatches = [regex]::Matches($newText, "(\d+\.\d+)%")
+                            try {
+                                $PBar.Value = [math]::Min(100.0, [double]::Parse($upscaleMatches[$upscaleMatches.Count - 1].Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture))
+                                $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
+                                $TxtETA.Text = "Status: Upscaling..."
+                            }
+                            catch {}
+                        }
+                        elseif ($job.IsWhisper -and $script:State.totalDuration -gt 0) {
+                            # Regex logic mapping Whisper VTT output string lines back into duration
+                            $whisperMatches = [regex]::Matches($newText, "-->\s*(?:(\d{2,3}):)?(\d{2}):(\d{2})\.(\d{3})")
+                            if ($whisperMatches.Count -gt 0) {
+                                $wm = $whisperMatches[$whisperMatches.Count - 1]
+                                try {
+                                    $h = if ($wm.Groups[1].Value) { [int]$wm.Groups[1].Value } else { 0 }
+                                    $m = [int]$wm.Groups[2].Value; $s = [int]$wm.Groups[3].Value; $ms = [int]$wm.Groups[4].Value
+                                    $curr = ($h * 3600) + ($m * 60) + $s + ($ms / 1000.0)
+                                    $prog = ($curr / $script:State.totalDuration) * 100
+                                    $PBar.Value = [math]::Min([double]100.0, [double]$prog)
+                                    $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
+                                    $TxtETA.Text = "Status: Transcribing..."
+                                }
+                                catch {}
+                            }
+                        }
+                    }
+                }
+                catch {}
+            }
+
+            # Evaluate execution exit state logic
+            if ($script:State.p -and $script:State.p.HasExited) { 
+                $timer.Stop()
+                $job = $script:State.BatchQueue[$script:State.CurrentJobIndex]
+            
+                [int]$exCode = 0
+                try { 
+                    if ($null -ne $script:State.p.ExitCode) {
+                        $exCode = [int]$script:State.p.ExitCode 
+                    }
+                }
+                catch {}
+    
+                if ($exCode -eq 0 -or ($job.IsYtDlp -and $exCode -in @(1, 2))) {
+                
+                    $logText = $LogBox.Text
+                
+                    # Advanced parsing: sometimes tools don't return non-zero exit codes correctly on failure
+                    if ($job.CustomTool -match "upscayl" -and ($logText -match "Error: Unknown model" -or $logText -match "failed to load" -or $logText -match "invalid param")) {
+                        $StatusText.Text = "Failed (Model Error)"
+                        $StatusText.Foreground = "#EF4444"
+                        $LogBox.AppendText("`r`n[ERROR] Upscayl failed to load the AI models. The model directory might be missing or invalid.`r`n")
+                        $exCode = 1
+                    }
+                    elseif (-not $job.IsYtDlp -and -not $job.CustomTool -and ($logText -match "Error opening input" -or $logText -match "Error binding filtergraph" -or $logText -match "Invalid argument" -or $logText -match "Cannot find an unused" -or $logText -match "Option not found" -or $logText -match "Unable to open" -or $logText -match "Error initializing filters" -or $logText -match "No such file or directory" -or $logText -match "Unrecognized option")) {
+                        $StatusText.Text = "Failed (FFmpeg Error)"
+                        $StatusText.Foreground = "#EF4444"
+                        $LogBox.AppendText("`r`n[ERROR] FFmpeg encountered an error. The process was aborted.`r`n")
+                        $exCode = 1
+                    }
+                    elseif ($job.IsYtDlp -and ($logText -match "ERROR:" -or $logText -match "Could not find known video or audio" -or $logText -match "Unsupported URL" -or $logText -match "This video is unavailable")) {
+                        $StatusText.Text = "Failed (Extraction Error)"
+                        $StatusText.Foreground = "#EF4444"
+                        $LogBox.AppendText("`r`n[ERROR] yt-dlp could not extract media. URL might be unsupported, protected, or missing a video.`r`n")
+                        $exCode = 1
+                    }
+                    elseif ($job.IsYtDlp -and $logText -notmatch "\[download\]" -and $logText -notmatch "\[info\]" -and $logText -notmatch "has already been downloaded") {
+                        $StatusText.Text = "Failed (No Media Found)"
+                        $StatusText.Foreground = "#EF4444"
+                        $LogBox.AppendText("`r`n[ERROR] No valid media could be found to download. The site might not contain an extractable video/audio.`r`n")
+                        $exCode = 1
+                    }
+                    elseif ($exCode -ne 0) {
+                        $StatusText.Text = "Finished (With minor warnings)."
+                        $StatusText.Foreground = "#F59E0B"
+                        $LogBox.AppendText("`r`n[WARNING] Completed, but some post-processing (e.g. metadata/thumbnail) had issues.`r`n")
+                    }
+                    else {
+                        $StatusText.Text = "Finished Successfully."
+                        $StatusText.Foreground = "#10B981"
+                        $LogBox.AppendText("`r`n[SUCCESS] Task completed cleanly.`r`n")
+
+                        if ($job.IsWhisper -or $job.CustomTool -match "upscayl") {
+                            $LogBox.AppendText("`r`n[SUCCESS] Processing saved to: $($job.OutputDir)`r`n")
+                        }
+                    
+                        # Deletes base source file upon success if set in settings
+                        if ($Config.AutoDelete -and -not $job.IsYtDlp -and $job.ListItem -and (Test-Path -LiteralPath $job.ListItem)) {
+                            Remove-Item -LiteralPath $job.ListItem -Force -ErrorAction SilentlyContinue
+                            $LogBox.AppendText("[CLEANUP] Deleted original file: $(Split-Path $job.ListItem -Leaf)`r`n")
+                        }
+                    }
+                }
+                else {
+                    $StatusText.Text = "Failed (Exit Code: $exCode)"
+                    $StatusText.Foreground = "#EF4444"
+                    $LogBox.AppendText("`r`n[ERROR] Process aborted with error code $exCode.`r`n")
+        
+                    if (Test-Path $script:State.tempLogErr) {
+                        try {
+                            $errText = [System.IO.File]::ReadAllText($script:State.tempLogErr, [System.Text.Encoding]::Default)
+                            if (-not [string]::IsNullOrWhiteSpace($errText)) {
+                                $LogBox.AppendText("TECHNICAL ERROR LOG:`r`n$errText`r`n")
+                                Write-CrashLog "Task exited with code $exCode. Output: $errText"
+                            }
+                        }
+                        catch {}
+                    }
+                }
+
+                if ($exCode -ne 0 -and $job.OutputFile -and (Test-Path -LiteralPath $job.OutputFile)) {
+                    Remove-Item -LiteralPath $job.OutputFile -Force -ErrorAction SilentlyContinue
+                    $LogBox.AppendText("`r`n[CLEANUP] Deleted incomplete output file: $(Split-Path $job.OutputFile -Leaf)`r`n")
+                }
+
+                if (-not [string]::IsNullOrWhiteSpace($LogBox.Text)) { Write-ConvertLog $LogBox.Text }
+
+                if ($script:State.p) { try { $script:State.p.Dispose() } catch {}; $script:State.p = $null }
+
+                try {
+                    if ($job.ListBox -ne $null -and $job.ListItem -ne $null) {
+                        $job.ListBox.Items.Remove($job.ListItem)
+                    }
+                }
+                catch {}
+
+                if ($CbAutoScrollLog.IsChecked) {
+                    $LogBox.ScrollToEnd()
+                }
+
+                $script:State.CurrentJobIndex++
+                [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ Process-NextJob })
+            }
+        })
+
+    # Main entry point when the user clicks 'START PROCESS'. Parses inputs, creates jobs, and starts the queue.
+    $BtnRun.Add_Click({
+            Check-Missing-Tools
+
+            # Pre-fetch supported sites cache silently in the background to prevent UI freezing later
+            if ($null -eq $script:State.SupportedSitesCache) {
+                [void][System.Threading.Tasks.Task]::Run([Action] {
+                        try {
+                            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                            $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
+                            $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -TimeoutSec 10
+                        }
+                        catch { $script:State.SupportedSitesCache = "fallback_offline" }
+                    })
+            }
+            $tabIndex = $MainTabs.SelectedIndex
+    
+            $script:State.BatchQueue = @()
+            $script:State.CurrentJobIndex = 0
+            $LogBox.Clear()
+
+            $customParamText = ""
+            $toolDocs = ""
+            $toolName = ""
+            
+            # Validate custom flags before execution to ensure standard parameter behavior
+            if ($tabIndex -eq 0 -and $A_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($A_CustomParams.Text)) { $customParamText = $A_CustomParams.Text; $toolDocs = "https://ffmpeg.org/ffmpeg.html"; $toolName = "FFmpeg" }
+            elseif ($tabIndex -eq 1 -and $V_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($V_CustomParams.Text)) { $customParamText = $V_CustomParams.Text; $toolDocs = "https://ffmpeg.org/ffmpeg.html"; $toolName = "FFmpeg" }
+            elseif ($tabIndex -eq 4 -and $Y_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($Y_CustomParams.Text)) { $customParamText = $Y_CustomParams.Text; $toolDocs = "https://github.com/yt-dlp/yt-dlp#usage-and-options"; $toolName = "yt-dlp" }
+
+            if ($customParamText) {
+                $isSuspicious = ($customParamText.Trim() -notmatch "^-")
+                $msg = ""
+                
+                if ($isSuspicious) {
+                    $msg = "Warning: Your custom parameters do not start with a hyphen (-). This is usually invalid syntax!`n`n"
+                }
+                else {
+                    $msg = "Notice: You are using manual custom parameters.`n`n"
+                }
+                
+                $msg += "If your parameters are wrong, the process will fail and will NOT auto-retry.`n`nCheck $toolName syntax here:`n$toolDocs`n`nDo you want to proceed?"
+                
+                $ans = [System.Windows.MessageBox]::Show($msg, "Custom Parameters Validation", "YesNo", "Warning")
+                if ($ans -eq "No") { return }
+            }
+
+            # Direct parsing block for Tab: Muxing
+            if ($tabIndex -eq 3) {
+                if (-not $script:State.ffmpegFound) { [void][System.Windows.MessageBox]::Show("FFmpeg not found!", "Missing Tool", 0, 48); return }
+                if ([string]::IsNullOrWhiteSpace($M_InVideo.Text) -or -not (Test-Path -LiteralPath $M_InVideo.Text) -or [string]::IsNullOrWhiteSpace($M_InAudio.Text) -or -not (Test-Path -LiteralPath $M_InAudio.Text)) { 
+                    [void][System.Windows.MessageBox]::Show("Please select valid video and audio files.", "File Error", 0, 48)
+                    return 
+                }
+    
+                $baseOut = $M_OutFile.Text
+                if ([string]::IsNullOrWhiteSpace($baseOut)) {
+                    $outDir = Join-Path $ScriptDir "convert\muxed"
+                    $baseTargetFile = Join-Path $outDir "$([System.IO.Path]::GetFileNameWithoutExtension($M_InVideo.Text))-muxed.mp4" 
+                }
+                else {
+                    $outDir = [System.IO.Path]::GetDirectoryName($baseOut)
+                    $baseTargetFile = $baseOut
+                }
+                if (-not (Test-Path $outDir)) { [void](New-Item -ItemType Directory -Path $outDir -Force) }
+        
+                $script:State.lastOutDir = $outDir
+                $targetFile = Get-UniqueFileName $baseTargetFile
+        
+                $argArray = @("-hide_banner", "-y", "-i", $M_InVideo.Text, "-i", $M_InAudio.Text, "-c", "copy", "-map", "0:v:0", "-map", "1:a:0", $targetFile)
+                $script:State.BatchQueue += @{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $targetFile; ListBox = $null; ListItem = $null }
+            }
+            # Direct parsing block for Tab: Download
+            elseif ($tabIndex -eq 4) {
+                if (-not $script:State.ytdlpFound) { 
+                    [void][System.Windows.MessageBox]::Show("yt-dlp.exe not found!", "Missing Tool", 0, 48)
+                    return 
+                }
+
+                $link = $Y_Link.Text.Trim()
+                if ([string]::IsNullOrWhiteSpace($link) -or 
+                    $link -eq "https://" -or 
+                    $link -match "target url" -or 
+                    $link -notmatch "^(https?://|www\.)") { 
+                    [void][System.Windows.MessageBox]::Show("Please enter a valid URL. (Format: https://website.com)", "Error", 0, 16)
+                    return 
+                }
+
+                
+                if (-not (Check-YtDlpSupport $link)) { return }
+
+                $isSupported = $false
+                try {
+                    $uri = [System.Uri]($link -replace "^www\.", "https://www.")
+                    $hostName = $uri.Host.ToLower().Replace("www.", "")
+                    $domainPart = ($hostName -split '\.')[0]
+                    if ($hostName -match "youtu\.be") { $domainPart = "youtube" }
+
+                    $commonSites = @(
+                        "youtube", "youtu", "arte", "vimeo", "twitch", "facebook",
+                        "instagram", "twitter", "x", "tiktok", "soundcloud",
+                        "dailymotion", "reddit", "kick", "rumble"
+                    )
+        
+                    if ($commonSites -contains $domainPart -or $commonSites -contains $hostName) {
+                        $isSupported = $true
+                    }
+
+                    if (-not $isSupported) {
+                        if ($null -eq $script:State.SupportedSitesCache -or $script:State.SupportedSitesCache.Length -eq 0) {
+                            try {
+                                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                                $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
+                                $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing
+                            }
+                            catch {
+                                $script:State.SupportedSitesCache = "fallback_offline"
+                            }
+                        }
+            
+                        if ($script:State.SupportedSitesCache -is [array]) {
+                            if ($script:State.SupportedSitesCache -match $domainPart) { $isSupported = $true }
+                        }
+                        else {
+                            if ($script:State.SupportedSitesCache -match "(?i)\b$domainPart\b") { $isSupported = $true }
+                        }
+                    }
+                }
+                catch { 
+                    $isSupported = $true 
+                }
+
+                if (-not $isSupported) {
+                    $win = New-Object System.Windows.Window
+                    $win.Title = "Unsupported Site"
+                    $win.SizeToContent = "WidthAndHeight"
+                    $win.WindowStartupLocation = "CenterScreen"
+                    $win.Background = $window.Resources["BgBrush"]
+                    $win.ResizeMode = "NoResize"
+    
+                    $sp = New-Object System.Windows.Controls.StackPanel
+                    $sp.Margin = 20
+    
+                    $tb = New-Object System.Windows.Controls.TextBlock
+                    $tb.TextWrapping = "Wrap"
+                    $tb.MaxWidth = 450
+                    $tb.Margin = "0,0,0,15"
+                    $tb.Foreground = $window.Resources["TextBrush"]
+                    $tb.Inlines.Add("The site '$domainPart' might not be officially supported.`n`nCheck the full list here:`n")
+    
+                    $hl = New-Object System.Windows.Documents.Hyperlink
+                    $hl.NavigateUri = "https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md"
+                    $hl.Inlines.Add("yt-dlp Supported Sites List")
+                    $hl.Add_Click({ [void](Start-Process $hl.NavigateUri) })
+                    $tb.Inlines.Add($hl)
+                    $tb.Inlines.Add("`n`nDo you want to attempt the download anyway? It might still work via the generic fallback extractor.")
+    
+                    [void]$sp.Children.Add($tb)
+
+                    $btnSp = New-Object System.Windows.Controls.StackPanel
+                    $btnSp.Orientation = "Horizontal"
+                    $btnSp.HorizontalAlignment = "Right"
+
+                    $btnTry = New-Object System.Windows.Controls.Button
+                    $btnTry.Content = "Try Anyway"
+                    $btnTry.Width = 100
+                    $btnTry.Height = 35
+                    $btnTry.Margin = "0,0,10,0"
+                    $btnTry.Background = "#10B981"
+                    $btnTry.Foreground = "White"
+                    $btnTry.BorderThickness = 0
+                    $btnTry.Cursor = "Hand"
+                    $btnTry.Add_Click({ $win.DialogResult = $true; $win.Close() })
+
+                    $btnCancel = New-Object System.Windows.Controls.Button
+                    $btnCancel.Content = "Cancel"
+                    $btnCancel.Width = 100
+                    $btnCancel.Height = 35
+                    $btnCancel.Background = "#6B7280"
+                    $btnCancel.Foreground = "White"
+                    $btnCancel.BorderThickness = 0
+                    $btnCancel.Cursor = "Hand"
+                    $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+                    [void]$btnSp.Children.Add($btnTry)
+                    [void]$btnSp.Children.Add($btnCancel)
+                    [void]$sp.Children.Add($btnSp)
+                    $win.Content = $sp
+
+                    if ($win.ShowDialog() -ne $true) { return }
+                }
+
+                $baseOut = $Y_OutDir.Text
+                if ($baseOut -match "Select target" -or [string]::IsNullOrWhiteSpace($baseOut)) { 
+                    if ($Y_Type.SelectedIndex -eq 1) {
+                        $outDir = Join-Path $ScriptDir "download\audio" 
+                    }
+                    else {
+                        $outDir = Join-Path $ScriptDir "download\video" 
+                    }
+                }
+                else { 
+                    $outDir = $baseOut
+                }
+
+                if (-not (Test-Path $outDir)) { 
+                    [void](New-Item -ItemType Directory -Path $outDir -Force) 
+                }
+                $script:State.lastOutDir = $outDir
+
+                $playlistFlag = "--no-playlist"
+                if ($link -match "list=") {
+                    $ans = [System.Windows.MessageBox]::Show("Your link includes a playlist. Your Link:`n$link`nDownload full playlist?", "Playlist detected", "YesNoCancel", "Question")
+                    if ($ans -eq "Cancel") { return }
+                    $playlistFlag = if ($ans -eq "Yes") { "--yes-playlist" } else { "--no-playlist" }
+                }
+
+                $jobStart = Get-Date
+                $existing = Get-ChildItem -Path $outDir -File -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty FullName
+
+                function Get-YtDlpActiveOutputFile {
+                    param(
+                        [string]  $OutDir,
+                        [datetime]$StartTime,
+                        [string[]]$ExistingFiles
+                    )
+
+                    $candidates = Get-ChildItem -Path $OutDir -File -ErrorAction SilentlyContinue
+                    foreach ($f in $candidates) {
+                        if ($ExistingFiles -contains $f.FullName) { continue }
+
+                        $delta = ($f.LastWriteTime - $StartTime).TotalSeconds
+                        if ($delta -lt -5) { continue }
+
+                        if ($f.Name -match '.*\.[^\.]+(\.part)?$') {
+                            return $f
+                        }
+                    }
+                    return $null
+                }
+
+                $argsSafe = Get-YtDlpArgs -isPreview $false -ExcludeCustom $true -PlaylistFlag $playlistFlag
+                if ($null -eq $argsSafe) { return }
+
+                $argsFull = Get-YtDlpArgs -isPreview $false -ExcludeCustom $false -PlaylistFlag $playlistFlag
+                $hasCustom = [bool](
+                    $Y_CheckCustomParams.IsChecked -and 
+                    -not [string]::IsNullOrWhiteSpace($Y_CustomParams.Text)
+                )
+
+                $script:State.BatchQueue += @{ 
+                    Args            = $argsFull
+                    SafeArgs        = $argsSafe
+                    HasCustomParams = $hasCustom
+                    Retried         = $false
+                    IsYtDlp         = $true
+                    OutputFile      = $null
+                    OutputDir       = $outDir
+                    JobStart        = $jobStart
+                    ExistingFiles   = $existing
+                    ActiveOutput    = $null
+                    ListBox         = $null
+                    ListItem        = $null 
+                }
+
+                if (-not (Get-Variable -Name "Resolve-YtDlpActiveOutputForCurrentJob" -Scope Script -ErrorAction SilentlyContinue)) {
+                    function Resolve-YtDlpActiveOutputForCurrentJob {
+                        $idx = $script:State.CurrentJobIndex
+                        if ($idx -lt 0 -or $idx -ge $script:State.BatchQueue.Count) { return }
+                        $job = $script:State.BatchQueue[$idx]
+                        if (-not $job.IsYtDlp) { return }
+                        if ($job.ActiveOutput) { return }
+
+                        $active = Get-YtDlpActiveOutputFile -OutDir $job.OutputDir -StartTime $job.JobStart -ExistingFiles $job.ExistingFiles
+                        if ($active) {
+                            $job.ActiveOutput = $active.FullName
+                            $job.OutputFile = $active.FullName
+                            $script:State.BatchQueue[$idx] = $job
+
+                            $BtnCancel.IsEnabled = $true
+                            $LogBox.AppendText("`r`n[INFO] Active output for current yt-dlp job: $($active.Name)`r`n")
+                        }
+                    }
+                    Set-Variable -Name "Resolve-YtDlpActiveOutputForCurrentJob" -Scope Script -Value (Get-Command Resolve-YtDlpActiveOutputForCurrentJob -CommandType Function)
+                }
+            }
+            # Direct parsing block for Tab: Specials (AI and Repair tools)
+            elseif ($tabIndex -eq 5) {
+                if (-not $script:State.ffmpegFound) { [void][System.Windows.MessageBox]::Show("FFmpeg not found!", "Missing Tool", 0, 48); return }
+                
+                $subIdx = $SpecialSubTabs.SelectedIndex
+                $outDir = Join-Path $ScriptDir "special"
+                if (-not (Test-Path $outDir)) { [void](New-Item -ItemType Directory -Path $outDir -Force) }
+                $script:State.lastOutDir = $outDir
+
+                # AI Transcriber Sub-Tab
+                if ($subIdx -eq 0) {
+                    $whisperInstalled = $false
+                    if (Get-Command "whisper" -ErrorAction SilentlyContinue) { $whisperInstalled = $true }
+                    elseif (Get-Command "python" -ErrorAction SilentlyContinue) {
+                        $pipCheck = & python -c "import pkgutil; print(1 if pkgutil.find_loader('whisper') else 0)" 2>$null
+                        if ($pipCheck -match "1") { $whisperInstalled = $true }
+                    }
+
+                    # Automates Whisper/Python installation if missing
+                    if (-not $whisperInstalled) {
+                        $win = New-Object System.Windows.Window
+                        $win.Title = "Missing AI Component"
+                        $win.SizeToContent = "WidthAndHeight"
+                        $win.WindowStartupLocation = "CenterScreen"
+                        $win.ResizeMode = "NoResize"
+                        $win.Background = $window.Resources["BgBrush"]
+                        
+                        $sp = New-Object System.Windows.Controls.StackPanel
+                        $sp.Margin = 20
+                        $tbMsg = New-Object System.Windows.Controls.TextBlock
+                        $tbMsg.TextWrapping = "Wrap"
+                        $tbMsg.MaxWidth = 450
+                        $tbMsg.Foreground = $window.Resources["TextBrush"]
+                        $tbMsg.Margin = "0,0,0,15"
+                        
+                        $tbMsg.Inlines.Add("OpenAI Whisper is required to transcribe audio, but it is not installed on your system.`n`nWould you like to install it automatically now? (This uses Python).`n")
+                        [void]$sp.Children.Add($tbMsg)
+                        
+                        $btnSp = New-Object System.Windows.Controls.StackPanel
+                        $btnSp.Orientation = "Horizontal"
+                        $btnSp.HorizontalAlignment = "Right"
+
+                        $btnAuto = New-Object System.Windows.Controls.Button
+                        $btnAuto.Content = "Install Whisper AI"
+                        $btnAuto.Width = 140; $btnAuto.Height = 35; $btnAuto.Margin = "0,0,10,0"
+                        $btnAuto.Background = "#10B981"; $btnAuto.Foreground = "White"; $btnAuto.BorderThickness = 0; $btnAuto.Cursor = "Hand"
+                        $btnAuto.Add_Click({ $win.DialogResult = $true; $win.Close() })
+
+                        $btnCancel = New-Object System.Windows.Controls.Button
+                        $btnCancel.Content = "Cancel"
+                        $btnCancel.Width = 100; $btnCancel.Height = 35
+                        $btnCancel.Background = "#6B7280"; $btnCancel.Foreground = "White"; $btnCancel.BorderThickness = 0; $btnCancel.Cursor = "Hand"
+                        $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+                        [void]$btnSp.Children.Add($btnAuto); [void]$btnSp.Children.Add($btnCancel)
+                        [void]$sp.Children.Add($btnSp)
+                        $win.Content = $sp
+
+                        if ($win.ShowDialog() -eq $true) {
+                            $StatusText.Text = "Checking Python & Installing Whisper..."
+                            $LogBox.AppendText("`r`n[INSTALL] Starting Whisper installation...`r`n")
+                            
+                            $pythonCheck = Get-Command "python" -ErrorAction SilentlyContinue
+                            if (-not $pythonCheck) {
+                                if (-not (Get-Command "winget" -ErrorAction SilentlyContinue)) {
+                                    $LogBox.AppendText("[ERROR] Winget is missing. Cannot auto-install Python.`r`n")
+                                    [void][System.Windows.MessageBox]::Show("Winget is missing. Please install Python manually to use Whisper.", "Winget Not Found", 0, 16)
+                                    return
+                                }
+                                $LogBox.AppendText("[INSTALL] Python not found. Installing Python via WinGet...`r`n")
+                                $pyProc = Start-Process winget -ArgumentList "install --id Python.Python.3 --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
+                                if ($pyProc.ExitCode -ne 0) {
+                                    $LogBox.AppendText("[WARNING] Python installation cancelled or failed.`r`n")
+                                    [void][System.Windows.MessageBox]::Show("Python installation was cancelled. Whisper requires Python.", "Installation Aborted", 0, 48)
+                                    return
+                                }
+                                $env:PATH = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+                            }
+
+                            $LogBox.AppendText("[INSTALL] Running pip install openai-whisper...`r`n")
+                            $pipProc = Start-Process cmd.exe -ArgumentList "/c echo Installing OpenAI Whisper... && pip install -U openai-whisper" -Wait -WindowStyle Normal -PassThru
+
+                            if ($pipProc.ExitCode -ne 0) {
+                                $LogBox.AppendText("[WARNING] Whisper pip installation cancelled or failed.`r`n")
+                                [void][System.Windows.MessageBox]::Show("Whisper installation was cancelled or failed.", "Installation Aborted", 0, 48)
+                                return
+                            }
+
+                            $LogBox.AppendText("[SUCCESS] Whisper installed successfully!`r`n")
+                            $StatusText.Text = "Whisper ready."
+                            [void][System.Windows.MessageBox]::Show("Whisper AI has been installed successfully!`n`nNo restart required! The process will now continue automatically.", "Installation Complete", 0, 64)
+                        }
+                        else {
+                            return
+                        }
+                    }
+
+                    if ([string]::IsNullOrWhiteSpace($S_ScribeIn.Text) -or -not (Test-Path -LiteralPath $S_ScribeIn.Text)) { 
+                        [void][System.Windows.MessageBox]::Show("Please select a valid media file!", "Error", 0, 48)
+                        return 
+                    }
+                    
+                    $ts = Get-Date -Format "yyyyMMdd_HHmmss"
+                    $whisperOutDir = Join-Path $ScriptDir "special\transcribe\$ts"
+                    if (-not (Test-Path $whisperOutDir)) { [void](New-Item -ItemType Directory -Path $whisperOutDir -Force) }
+                    
+                    $script:State.lastOutDir = $whisperOutDir
+
+                    $inFile = $S_ScribeIn.Text
+                    $outFormat = (Get-CbVal $S_ScribeFormat)
+                    if ($outFormat -match "txt") { $outFormat = "txt" }
+                    elseif ($outFormat -match "srt") { $outFormat = "srt" }
+                    elseif ($outFormat -match "vtt") { $outFormat = "vtt" }
+                    elseif ($outFormat -match "json") { $outFormat = "json" }
+
+                    $outSrt = Join-Path $whisperOutDir "$([System.IO.Path]::GetFileNameWithoutExtension($inFile)).$outFormat"
+                    
+                    $model = (Get-CbVal $S_ScribeModel) -split " " | Select-Object -First 1
+                    $Config.WhisperModel = $model
+                    
+                    $scribeArgs = @("-u", "-m", "whisper", $inFile, "--model", $model, "--output_format", $outFormat, "--output_dir", $whisperOutDir, "--fp16", "False")
+
+                    $task = Get-CbVal $S_ScribeTask
+                    if ($task -match "Translate") {
+                        $scribeArgs += @("--task", "translate")
+                    }
+
+                    $lang = (Get-CbVal $S_ScribeLang)
+                    if ($lang -match "Auto-Detect") {
+                        $LogBox.AppendText("`r`n[INFO] Auto-Detect selected. Whisper will transcribe in the original language.`r`n")
+                    }
+                    else {
+                        $langCode = switch ($lang) {
+                            "English" { "en" }
+                            "German" { "de" }
+                            "Spanish" { "es" }
+                            "French" { "fr" }
+                            "Italian" { "it" }
+                            "Dutch" { "nl" }
+                            "Russian" { "ru" }
+                            default { "en" }
+                        }
+                        $scribeArgs += @("--language", $langCode)
+                    }
+            
+                    $ffmpegDir = [System.IO.Path]::GetDirectoryName($script:State.ffmpeg)
+                    if ($env:PATH -notmatch [regex]::Escape($ffmpegDir)) { $env:PATH = "$ffmpegDir;" + $env:PATH }
+            
+                    $script:State.BatchQueue += @{ Args = $scribeArgs; SafeArgs = $scribeArgs; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = "python.exe"; IsWhisper = $true; OutputDir = $whisperOutDir; InputFile = $inFile; OutputFile = $outSrt; ListBox = $null; ListItem = $null }
+                    
+                    # Logic to immediately queue an ffmpeg job to burn the transcribed file onto the video
+                    if ($S_CheckBurn.IsChecked) {
+                        $ext = [System.IO.Path]::GetExtension($inFile).ToLower()
+                        $audioExts = @(".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac")
+                        
+                        if ($audioExts -contains $ext) {
+                            [void][System.Windows.MessageBox]::Show("You cannot burn subtitles into an audio-only file ($ext).`n`nThe transcription will only be saved as a text/subtitle file in your source folder.", "Audio File Detected", 0, 64)
+                        }
+                        elseif ($outFormat -in @("srt", "vtt")) {
+                            $outFile = Get-UniqueFileName (Join-Path $whisperOutDir "SCRIBED_$([System.IO.Path]::GetFileName($inFile))")
+                            $safeOutSrt = $outSrt.Replace('\', '/').Replace(':', '\:').Replace('[', '\[').Replace(']', '\]').Replace("'", "\'")
+                            $burnArgs = @("-hide_banner", "-y", "-i", $inFile, "-vf", "subtitles='''$safeOutSrt'''", "-c:a", "copy", $outFile)
+                            $script:State.BatchQueue += @{ Args = $burnArgs; SafeArgs = $burnArgs; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = ""; IsWhisper = $false; OutputDir = $whisperOutDir; InputFile = $inFile; OutputFile = $outFile; ListBox = $null; ListItem = $null }
+                        }
+                    }
+                }
+                # Audio Visualizer Sub-Tab
+                elseif ($subIdx -eq 2) {
+                    if ([string]::IsNullOrWhiteSpace($S_VisAudio.Text) -or -not (Test-Path -LiteralPath $S_VisAudio.Text)) { 
+                        [void][System.Windows.MessageBox]::Show("Please select a valid audio file!", "Error", 0, 48)
+                        return 
+                    }
+                    $outFile = Get-UniqueFileName (Join-Path $outDir "$([System.IO.Path]::GetFileNameWithoutExtension($S_VisAudio.Text))_visualizer.mp4")
+                    
+                    $filter = switch ($S_VisStyle.SelectedIndex) {
+                        0 { "showwaves=s=1280x720:mode=line:colors=cyan" }
+                        1 { "showfreqs=s=1280x720:mode=bar:colors=magenta" }
+                        2 { "avectorscope=s=720x720:zoom=1.5:rc=0:gc=255:bc=0" }
+                    }
+                    if (-not [string]::IsNullOrWhiteSpace($S_VisImg.Text) -and (Test-Path -LiteralPath $S_VisImg.Text)) {
+                        $argArray = @("-hide_banner", "-y", "-loop", "1", "-i", $S_VisImg.Text, "-i", $S_VisAudio.Text, "-filter_complex", "[1:a]$filter[vis];[0:v][vis]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2:format=auto,format=yuv420p[v]", "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-shortest", $outFile)
+                    }
+                    else {
+                        $argArray = @("-hide_banner", "-y", "-i", $S_VisAudio.Text, "-filter_complex", "[0:a]$filter[v]", "-map", "[v]", "-map", "0:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", $outFile)
+                    }
+                    $script:State.BatchQueue += @{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $null; ListItem = $null }
+                }
+                # Video Stabilizer Sub-Tab (Positional Parameter Fix)
+                elseif ($subIdx -eq 3) {
+                    if ([string]::IsNullOrWhiteSpace($S_StabIn.Text) -or -not (Test-Path -LiteralPath $S_StabIn.Text)) { 
+                        [void][System.Windows.MessageBox]::Show("Please select a valid video file to stabilize!", "Error", 0, 48)
+                        return
+                    }
+
+                    $outFile = Get-UniqueFileName (Join-Path $outDir "STABILIZED_$([System.IO.Path]::GetFileName($S_StabIn.Text))")
+                    
+                    # 1. Just generate a unique filename (NO drive letter, NO colons, NO slashes)
+                    # Because WorkDir is set to $env:TEMP below, FFmpeg will save/read this in the Temp folder naturally.
+                    $trfName = "stab_$([guid]::NewGuid().ToString().Substring(0,8)).trf"
+
+                    $level = $S_StabLevel.SelectedIndex
+                    $shakiness = if ($level -eq 0) { 3 } elseif ($level -eq 1) { 5 } else { 8 }
+                    $smoothing = if ($level -eq 0) { 10 } elseif ($level -eq 1) { 15 } else { 25 }
+
+                    # PASS 1: Detection
+                    $filter1 = "vidstabdetect=shakiness=${shakiness}:result=$trfName"
+                    $argPass1 = @("-hide_banner", "-y", "-i", $S_StabIn.Text, "-vf", $filter1, "-f", "null", "-")
+
+                    $script:State.BatchQueue += @{ Args = $argPass1; SafeArgs = $argPass1; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $null; ListBox = $null; ListItem = $null; WorkDir = $env:TEMP }
+
+                    # PASS 2: Transformation
+                    $filter2 = "vidstabtransform=smoothing=${smoothing}:input=$trfName"
+                    $argPass2 = @("-hide_banner", "-y", "-i", $S_StabIn.Text, "-vf", $filter2, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "copy", $outFile)
+
+                    $script:State.BatchQueue += @{ Args = $argPass2; SafeArgs = $argPass2; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $null; ListItem = $S_StabIn.Text; WorkDir = $env:TEMP }
+                }
+                # AI Upscaler Sub-Tab
+                elseif ($subIdx -eq 1) {
+                    
+                    if (-not $script:State.upscaylFound) { 
+                        $win = New-Object System.Windows.Window
+                        $win.Title = "Missing AI Component"
+                        $win.SizeToContent = "WidthAndHeight"
+                        $win.WindowStartupLocation = "CenterScreen"
+                        $win.ResizeMode = "NoResize"
+                        $win.Background = $window.Resources["BgBrush"]
+                        
+                        $sp = New-Object System.Windows.Controls.StackPanel
+                        $sp.Margin = 20
+                        $tbMsg = New-Object System.Windows.Controls.TextBlock
+                        $tbMsg.TextWrapping = "Wrap"
+                        $tbMsg.MaxWidth = 450
+                        $tbMsg.Foreground = $window.Resources["TextBrush"]
+                        $tbMsg.Margin = "0,0,0,15"
+                        
+                        $tbMsg.Inlines.Add("Upscayl is required for AI upscaling, but it is not found on your system.`n`nWould you like to download and install it automatically via WinGet now?`n")
+                        [void]$sp.Children.Add($tbMsg)
+                        
+                        $btnSp = New-Object System.Windows.Controls.StackPanel
+                        $btnSp.Orientation = "Horizontal"
+                        $btnSp.HorizontalAlignment = "Right"
+
+                        $btnAuto = New-Object System.Windows.Controls.Button
+                        $btnAuto.Content = "Install Upscayl"
+                        $btnAuto.Width = 140; $btnAuto.Height = 35; $btnAuto.Margin = "0,0,10,0"
+                        $btnAuto.Background = "#10B981"; $btnAuto.Foreground = "White"; $btnAuto.BorderThickness = 0; $btnAuto.Cursor = "Hand"
+                        $btnAuto.Add_Click({ $win.DialogResult = $true; $win.Close() })
+
+                        $btnCancel = New-Object System.Windows.Controls.Button
+                        $btnCancel.Content = "Cancel"
+                        $btnCancel.Width = 100; $btnCancel.Height = 35
+                        $btnCancel.Background = "#6B7280"; $btnCancel.Foreground = "White"; $btnCancel.BorderThickness = 0; $btnCancel.Cursor = "Hand"
+                        $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+                        [void]$btnSp.Children.Add($btnAuto); [void]$btnSp.Children.Add($btnCancel)
+                        [void]$sp.Children.Add($btnSp)
+                        $win.Content = $sp
+
+                        if ($win.ShowDialog() -eq $true) {
+                            if (-not (Get-Command "winget" -ErrorAction SilentlyContinue)) {
+                                [void][System.Windows.MessageBox]::Show("Windows Package Manager (winget) is not installed on your system.`n`nPlease install Upscayl manually.", "Winget Not Found", 0, 16)
+                                return
+                            }
+
+                            $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+                            if (-not $isAdmin) {
+                                [void][System.Windows.MessageBox]::Show("No admin rights to install Upscayl.`n`nPlease restart the program with Administrator rights (Right-click -> Run as administrator) to continue.", "Admin Rights Required", 0, 48)
+                                return
+                            }
+
+                            $StatusText.Text = "Installing Upscayl..."
+                            $LogBox.AppendText("`r`n[INSTALL] Installing Upscayl via WinGet...`r`n")
+                            $TaskbarProgress.ProgressState = "Indeterminate"
+                            
+                            $installProc = Start-Process winget -ArgumentList "install -e --id Upscayl.Upscayl --force --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
+                            
+                            Find-Tools
+                            
+                            if (-not $script:State.upscaylFound) {
+                                $TaskbarProgress.ProgressState = "None"
+                                if ($installProc.ExitCode -ne 0) {
+                                    $LogBox.AppendText("[WARNING] Upscayl installation was cancelled or failed (Exit Code: $($installProc.ExitCode)).`r`n")
+                                    [void][System.Windows.MessageBox]::Show("Installation was cancelled or encountered an error.", "Installation Aborted", 0, 48)
+                                }
+                                else {
+                                    $LogBox.AppendText("[ERROR] Upscayl installed, but the backend binary (upscayl-bin.exe) could not be found.`r`n")
+                                    [void][System.Windows.MessageBox]::Show("Upscayl installed, but the system couldn't locate the backend engine.`n`nYou may need to restart the application.", "Path Error", 0, 48)
+                                }
+                                return
+                            }
+
+                            $LogBox.AppendText("[SUCCESS] Upscayl backend mapped successfully!`r`n")
+                            $StatusText.Text = "Upscayl ready."
+                            $TaskbarProgress.ProgressState = "None"
+                            [void][System.Windows.MessageBox]::Show("Upscayl has been installed successfully!`n`nThe process will now continue automatically.", "Installation Complete", 0, 64)
+                        }
+                        else { return }
+                    }
+
+                    if (-not $script:State.upscaylFound) { return }
+                    
+                    if ([string]::IsNullOrWhiteSpace($S_UpscaleIn.Text) -or -not (Test-Path -LiteralPath $S_UpscaleIn.Text)) { 
+                        [void][System.Windows.MessageBox]::Show("Please select a valid media file to upscale!", "Error", 0, 48)
+                        return 
+                    }
+
+                    $ext = [System.IO.Path]::GetExtension($S_UpscaleIn.Text).ToLower()
+                    if ($ext -match "\.(mp4|mkv|avi|mov|webm)$") {
+                        [void][System.Windows.MessageBox]::Show("The Upscayl backend currently only supports image files directly.`n`nTo upscale a video, you must extract its frames into a sequence of images, upscale the images, and then merge them back together.", "Images Only", 0, 48)
+                        return
+                    }
+
+                    $esrganOutDir = if ($S_UpscaleOutDir.Text -match "Select target folder" -or [string]::IsNullOrWhiteSpace($S_UpscaleOutDir.Text)) { 
+                        Join-Path $ScriptDir "special\upscaled" 
+                    }
+                    else { 
+                        $S_UpscaleOutDir.Text 
+                    }
+                    if (-not (Test-Path $esrganOutDir)) { [void](New-Item -ItemType Directory -Path $esrganOutDir -Force) }
+                    $script:State.lastOutDir = $esrganOutDir
+
+                    $safeInputName = [System.IO.Path]::GetFileName($S_UpscaleIn.Text).Replace(" ", "_")
+                    $outFile = Join-Path $esrganOutDir "UPSCALED_$safeInputName"
+                    
+                    $counter = 1
+                    while (Test-Path -LiteralPath $outFile) {
+                        $name = [System.IO.Path]::GetFileNameWithoutExtension($safeInputName)
+                        $ext = [System.IO.Path]::GetExtension($safeInputName)
+                        $outFile = Join-Path $esrganOutDir "UPSCALED_${name}_${counter}${ext}"
+                        $counter++
+                    }
+
+                    $model = (Get-CbVal $S_UpscaleModel).Split(" ")[0]
+                    $scale = (Get-CbVal $S_UpscaleScale).Replace("x", "")
+                    
+                    $exeDir = Split-Path $script:State.upscayl -Parent
+                    $parentDir = Split-Path $exeDir -Parent
+                    $grandParentDir = Split-Path $parentDir -Parent
+                    
+                    # Logic to deeply scan typical Upscayl model installations
+                    $searchPaths = @(
+                        $script:State.upscaylModels,
+                        (Join-Path $exeDir "models"),
+                        (Join-Path $parentDir "models"),
+                        (Join-Path $grandParentDir "models"),
+                        (Join-Path $parentDir "app.asar.unpacked\models"),
+                        "C:\Program Files\Upscayl\resources\models",
+                        "$env:LOCALAPPDATA\Programs\upscayl\resources\models"
+                    )
+                    
+                    $mDir = $null
+                    foreach ($p in $searchPaths) {
+                        if ($p -and (Test-Path -LiteralPath (Join-Path $p "$model.param"))) {
+                            $mDir = $p
+                            break
+                        }
+                    }
+
+                    if (-not $mDir) {
+                        [void][System.Windows.MessageBox]::Show("The AI models (like '$model.param') could not be found.`n`nPlease check your Upscayl installation.", "Missing Model", 0, 48)
+                        return
+                    }
+
+                    $inFilePath = $S_UpscaleIn.Text
+                    try {
+                        # Resolve short paths to avoid spacing issues when passed to cmd buffer
+                        $fso = New-Object -ComObject Scripting.FileSystemObject
+                        if (Test-Path $mDir) { $mDir = $fso.GetFolder($mDir).ShortPath }
+                        if (Test-Path $inFilePath) { $inFilePath = $fso.GetFile($inFilePath).ShortPath }
+                        if (Test-Path $esrganOutDir) { 
+                            $shortOutDir = $fso.GetFolder($esrganOutDir).ShortPath 
+                            $outFile = Join-Path $shortOutDir (Split-Path $outFile -Leaf)
+                        }
+                    }
+                    catch {}
+
+                    $argArray = @("-i", $inFilePath, "-o", $outFile, "-n", $model, "-s", $scale, "-m", $mDir)
+
+                    $script:State.BatchQueue += @{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = $script:State.upscayl; OutputFile = $outFile; ListBox = $null; ListItem = $null; OutputDir = $esrganOutDir }
+                }
+            }
+            # Generic parsing block for Audio, Video, and Image tabs executing loop-based batches
+            else {
+                if (-not $script:State.ffmpegFound) { [void][System.Windows.MessageBox]::Show("FFmpeg not found!", "Missing Tool", 0, 48); return }
+                $list = if ($tabIndex -eq 0) { $A_InList } elseif ($tabIndex -eq 1) { $V_InList } else { $I_InList }
+                if ($list.Items.Count -eq 0) { 
+                    [void][System.Windows.MessageBox]::Show("Please select files or enter an URL before starting the process!", "No files selected or URL entered", 0, 48)
+                    return 
+                }
+
+                $baseOut = if ($tabIndex -eq 0) { $A_OutDir.Text } elseif ($tabIndex -eq 1) { $V_OutDir.Text } else { $I_OutDir.Text }
+                
+                if ($baseOut -match "target folder" -or [string]::IsNullOrWhiteSpace($baseOut)) { 
+                    if ($tabIndex -eq 0) { $outDir = Join-Path $ScriptDir "convert\audio" }
+                    elseif ($tabIndex -eq 1) { $outDir = Join-Path $ScriptDir "convert\video" }
+                    else { $outDir = Join-Path $ScriptDir "convert\image" }
+                } 
+                else {
+                    $outDir = $baseOut
+                }
+
+                if (-not (Test-Path $outDir)) { [void](New-Item -ItemType Directory -Path $outDir -Force) }
+                $script:State.lastOutDir = $outDir
+
+                foreach ($inFile in $list.Items) {
+                    $name = [System.IO.Path]::GetFileNameWithoutExtension($inFile)
+                    $argArray = @("-hide_banner", "-y")
+            
+                    if ($tabIndex -eq 0) { 
+                        $fmt = (Get-CbVal $A_CFormat).ToLower()
+                        $outFile = Get-UniqueFileName (Join-Path $outDir "$name.$fmt")
+                        
+                        $argsSafe = (Get-AudioFfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $true).Args
+                        $argsFull = (Get-AudioFfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
+                        $hasCustom = [bool]($A_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($A_CustomParams.Text))
+                        
+                        $script:State.BatchQueue += @{ Args = $argsFull; SafeArgs = $argsSafe; HasCustomParams = $hasCustom; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile }
+                    }
+                    elseif ($tabIndex -eq 1) { 
+
+                        $fmtRaw = Get-CbVal $V_CFormat
+                        $fmt = if ([string]::IsNullOrWhiteSpace($fmtRaw)) { "mp4" } else { $fmtRaw.ToLower() }
+                        
+
+                        $outFile = Get-UniqueFileName (Join-Path $outDir "$name.$fmt")
+
+                        $argsSafe = (Get-FfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $true).Args
+                        $argsFull = (Get-FfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
+                        $hasCustom = [bool]($V_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($V_CustomParams.Text))
+
+                        $script:State.BatchQueue += @{ Args = $argsFull; SafeArgs = $argsSafe; HasCustomParams = $hasCustom; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile }
+                    }
+                    elseif ($tabIndex -eq 2) { 
+                        $rawFmt = Get-CbVal $I_CFormat
+                        $fmt = if ($rawFmt -match "ICO") { "ico" } else { $rawFmt.ToLower() }
+                        $outFile = Get-UniqueFileName (Join-Path $outDir "$name.$fmt")
+                        $argArray += @("-i", $inFile)
+
+                        if ($I_CheckMeta.IsChecked) { $argArray += @("-map_metadata", "-1") }
+
+                        if ($fmt -eq "ico") {
+                            # Ensure icon is square 256x256 with transparent padding to prevent squashing
+                            $argArray += @("-vf", "scale=256:256:force_original_aspect_ratio=decrease,pad=256:256:(ow-iw)/2:(oh-ih)/2:color=black@0")
+                        } 
+                        else {
+                            $resCb = Get-CbVal $I_CRes
+                            if ($resCb -match "1920") { $argArray += @("-vf", "scale=1920:-1") }
+                            elseif ($resCb -match "1280") { $argArray += @("-vf", "scale=1280:-1") }
+                            elseif ($resCb -match "800") { $argArray += @("-vf", "scale=800:-1") }
+                        }
+
+                        if ($fmt -match "jpg|jpeg|webp") {
+                            $qualCb = Get-CbVal $I_CQual
+                            if ($fmt -match "webp") {
+                                if ($qualCb -match "Medium") { $argArray += @("-qscale", "50") }
+                                elseif ($qualCb -match "Low") { $argArray += @("-qscale", "20") }
+                                else { $argArray += @("-qscale", "80") }
+                            } else {
+                                if ($qualCb -match "Medium") { $argArray += @("-q:v", "6") }
+                                elseif ($qualCb -match "Low") { $argArray += @("-q:v", "12") }
+                                else { $argArray += @("-q:v", "2") }
+                            }
+                        }
+
+                        $argArray += $outFile
+                        $script:State.BatchQueue += @{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile }
+                    }
+                }
+            }
+
+            # Fire off queue process locally via helper function if variables check out
+            if ($script:State.BatchQueue.Count -gt 0) {
+                $BtnRun.IsEnabled = $false
+                $BtnUpdate.IsEnabled = $false
+                $BtnCancel.IsEnabled = $true
+                $BtnSkip.IsEnabled = $true
+                $script:State.CurrentJobIndex = 0
+                Process-NextJob
+            }
+        })
+
+    # Helper script to revert fields back to generic states if user requests full wipe
+    $BtnReset.Add_Click({
+            # Clear Queue Lists
+            @($A_InList, $V_InList, $I_InList) | ForEach-Object { if ($null -ne $_) { $_.Items.Clear() } }
+
+            # Reset Directories
+            $defaultDir = if ($Config.DefaultOutDir -and (Test-Path $Config.DefaultOutDir)) { $Config.DefaultOutDir } else { "Select target folder..." }
+            @($A_OutDir, $V_OutDir, $I_OutDir, $Y_OutDir) | ForEach-Object { if ($null -ne $_) { $_.Text = $defaultDir } }
+    
+            # Clear Text Inputs
+            @($M_InVideo, $M_InAudio, $M_OutFile, $V_SubPath, $Y_CookiePath, $Y_PoToken, $S_VisAudio, $S_VisImg, $S_StabIn, $S_ScribeIn, $S_UpscaleIn) | ForEach-Object { 
+                if ($null -ne $_) { $_.Clear() } 
+            }
+            
+            # Reset Download Link
+            if ($null -ne $Y_Link) { $Y_Link.Text = "https://" }
+
+            # Reset Special Tab Selectors
+            if ($null -ne $S_VisStyle) { $S_VisStyle.SelectedIndex = 0 }
+            if ($null -ne $S_StabLevel) { $S_StabLevel.SelectedIndex = 1 }
+            if ($null -ne $S_ScribeLang) { $S_ScribeLang.SelectedIndex = 0 }
+            if ($null -ne $S_ScribeFormat) { $S_ScribeFormat.SelectedIndex = 0 }
+            if ($null -ne $S_ScribeModel) { $S_ScribeModel.SelectedIndex = 1 }
+            if ($null -ne $S_ScribeTask) { $S_ScribeTask.SelectedIndex = 0 }
+            if ($null -ne $S_UpscaleModel) { $S_UpscaleModel.SelectedIndex = 0 }
+            if ($null -ne $S_UpscaleScale) { $S_UpscaleScale.SelectedIndex = 2 }
+            if ($null -ne $S_UpscaleOutDir) { $S_UpscaleOutDir.Text = "Select target folder..." }
+            if ($null -ne $S_CheckBurn) { $S_CheckBurn.IsChecked = $false }
+    
+            # Reset Audio/Video/Image Settings
+            if ($null -ne $A_CFormat) { $A_CFormat.SelectedIndex = 0 }
+            if ($null -ne $A_CQual) { $A_CQual.SelectedIndex = 2 }
+            if ($null -ne $A_CChan) { $A_CChan.SelectedIndex = 0 }
+            if ($null -ne $A_CheckExtract) { $A_CheckExtract.IsChecked = $false }
+            if ($null -ne $A_CheckNorm) { $A_CheckNorm.IsChecked = $false }
+            
+            if ($null -ne $V_CFormat) { $V_CFormat.SelectedIndex = 1 }
+            if ($null -ne $V_CCodec) { $V_CCodec.SelectedIndex = 0 }
+            if ($null -ne $V_CRes) { $V_CRes.SelectedIndex = 0 }
+            if ($null -ne $V_Preset) { $V_Preset.SelectedIndex = 0 }
+            if ($null -ne $V_CFPS) { $V_CFPS.SelectedIndex = 0 }
+            if ($null -ne $V_CVol) { $V_CVol.SelectedIndex = 0 }
+            if ($null -ne $V_CSpeed) { $V_CSpeed.SelectedIndex = 0 }
+            if ($null -ne $V_AudioDelay) { $V_AudioDelay.Text = "0.0" }
+            if ($null -ne $V_SliderCRF) { $V_SliderCRF.Value = 23 }
+            if ($null -ne $V_CheckTargetSize) { $V_CheckTargetSize.IsChecked = $false }
+
+            if ($null -ne $I_CFormat) { $I_CFormat.SelectedIndex = 0 }
+            if ($null -ne $I_CRes) { $I_CRes.SelectedIndex = 0 }
+            if ($null -ne $I_CheckMeta) { $I_CheckMeta.IsChecked = $false }
+    
+            # Reset Download Settings
+            if ($null -ne $Y_Type) { $Y_Type.SelectedIndex = 0 }
+            if ($null -ne $Y_Res) { $Y_Res.SelectedIndex = 0 }
+            if ($null -ne $Y_VFormat) { $Y_VFormat.SelectedIndex = 0 }
+            if ($null -ne $Y_AFormat) { $Y_AFormat.SelectedIndex = 0 }
+            if ($null -ne $Y_CookieBrowser) { $Y_CookieBrowser.SelectedIndex = 0 }
+            if ($null -ne $Y_CheckMeta) { $Y_CheckMeta.IsChecked = $true }
+            if ($null -ne $Y_CheckSubs) { $Y_CheckSubs.IsChecked = $false }
+            if ($null -ne $Y_CheckSponsor) { $Y_CheckSponsor.IsChecked = $false }
+            if ($null -ne $Y_CheckCookie) { $Y_CheckCookie.IsChecked = $false }
+            if ($null -ne $Y_CheckAutoPoToken) { $Y_CheckAutoPoToken.IsChecked = $false }
+            if ($null -ne $Y_PoToken) { $Y_PoToken.IsEnabled = $true; $Y_PoToken.Opacity = 1.0 }
+
+            # Reset Progress & UI State
+            if ($null -ne $V_PreviewStack) { $V_PreviewStack.Children.Clear() }
+            if ($null -ne $V_PreviewScroll) { $V_PreviewScroll.Visibility = "Collapsed" }
+            if ($null -ne $LogBox) { $LogBox.Clear() }
+            if ($null -ne $PBar) { $PBar.Value = 0 }
+            if ($null -ne $TaskbarProgress) { $TaskbarProgress.ProgressValue = 0.0; $TaskbarProgress.ProgressState = "None" }
+            if ($null -ne $TxtETA) { $TxtETA.Text = "ETA: --:--" }
+            if ($null -ne $StatusText) { $StatusText.Text = "Ready."; $StatusText.Foreground = $window.Resources["TextBrush"] }
+            if ($null -ne $BtnShow) { $BtnShow.Visibility = "Collapsed" }
+
+            $LogBox.AppendText("[RESET] All fields and queues have been cleared.`r`n")
+        })
+
+    # Terminates queue safely and clears uncompleted outputs to avoid data leaks
+    $BtnCancel.Add_Click({
+            $BtnCancel.IsEnabled = $false
+            $BtnSkip.IsEnabled = $false
+        
+            if ($script:State.CurrentJobIndex -lt $script:State.BatchQueue.Count) {
+
+                $currentJob = $script:State.BatchQueue[$script:State.CurrentJobIndex]
+                $script:State.BatchQueue = @($currentJob)
+                $script:State.CurrentJobIndex = 0
+            
+                if ($currentJob.IsWhisper) {
+                    try { Get-Process -Name "python" | Where-Object { $_.MainWindowTitle -eq "" } | Stop-Process -Force -ErrorAction SilentlyContinue } catch {}
+                }
+            
+                Kill-ProcessTree $script:State.p
+            
+                if ($currentJob.IsYtDlp) {
+                    $outDir = $currentJob.OutputDir
+                    if (Test-Path $outDir) {
+                        Get-ChildItem -Path $outDir -File | Where-Object {
+                            ($_.Extension -eq ".part" -or $_.Extension -eq ".jpg" -or $_.Extension -eq ".webp" -or $_.Name -match "\.temp$") -and
+                            $_.LastWriteTime -ge $currentJob.JobStart
+                        } | ForEach-Object {
+                            Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                        }
+                    }
+                }
+                $LogBox.AppendText("`r`n[CANCEL] User requested to cancel the queue. Aborting...`r`n")
+            }
+            else {
+                Kill-ProcessTree $script:State.p
+                $script:State.BatchQueue = @()
+                $script:State.CurrentJobIndex = 0
+                $BtnRun.IsEnabled = $true
+                $BtnUpdate.IsEnabled = $true
+                $TaskbarProgress.ProgressState = "None"
+                $StatusText.Text = "Process cancelled."
+                $StatusText.Foreground = "#EF4444"
+            }
+        
+            if (Test-Path $QueueFile) { Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue }
+        })
+
+    # Aborts current process but allows the loop to trigger the next file in array
+    $BtnSkip.Add_Click({
+            if ($script:State.p) { 
+                Kill-ProcessTree $script:State.p 
+                $LogBox.AppendText("`r`n[SKIP] User skipped current process.`r`n")
+            }
+        })
+
+    # Ensure application cleanly terminates all child CMD wrapper processes on standard cross exit
+    $window.Add_Closing({ Kill-ProcessTree $script:State.p; Save-Queue })
+    [void]$window.ShowDialog()
+}
+catch {
+    Write-CrashLog "Fatal Application Crash: $($_.Exception.Message)`r`n$($_.ScriptStackTrace)"
+    [void][System.Windows.MessageBox]::Show("Crash! See crash.log", "Error", 0, 16)
+}

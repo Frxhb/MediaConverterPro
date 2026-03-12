@@ -1,0 +1,8 @@
+/logs/
+/config/
+/download/
+/special/
+/convert/
+*.log
+*.json
+!mcp_presets.json
