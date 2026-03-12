@@ -107,7 +107,7 @@ function Get-UniqueFileName ([string]$FilePath) {
 # ==============================================================================
 try {
     # Set console encoding to UTF8 to handle special characters in paths/logs
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
     $ErrorActionPreference = "Continue" 
     
     # Load required .NET assemblies for WPF and Windows Forms
@@ -365,8 +365,16 @@ try {
         <Style TargetType="ComboBoxItem">
             <Setter Property="Background" Value="{DynamicResource InputBgBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border CornerRadius="4" Background="{TemplateBinding Background}" Margin="2">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
@@ -383,7 +391,38 @@ try {
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton" Grid.Column="2" Focusable="false"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                            <Path x:Name="Arrow" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" Data="M0,0 L4,4 L8,0 z"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ContentSite" TextElement.Foreground="{TemplateBinding Foreground}" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                            
+                            <Popup x:Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False">
+                                <Border Background="{DynamicResource CardBrush}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Margin="0,4,0,0" MinWidth="{TemplateBinding ActualWidth}" MaxHeight="250">
+                                    <ScrollViewer Margin="2" SnapsToDevicePixels="True">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="TextBox"><Setter Property="Background" Value="{DynamicResource InputBgBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="8"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Template">
@@ -1426,8 +1465,8 @@ try {
             else { $argList.Add("--no-playlist") }
         }
 
-        if ($Y_CheckCookie.IsChecked) {
-            if ($Y_CookiePath.Text -and (Test-Path $Y_CookiePath.Text)) { $argList.AddRange([string[]]@("--cookies", $Y_CookiePath.Text)) }
+        if ($Y_CheckCookie.IsChecked -eq $true) {
+            if ($Y_CookiePath.Text -and (Test-Path $Y_CookiePath.Text)) { $argList.AddRange([string[]]@("--cookies", "`"$($Y_CookiePath.Text)`"")) }
             else { $argList.AddRange([string[]]@("--cookies-from-browser", (Get-CbVal $Y_CookieBrowser))) }
         }
 
@@ -1774,14 +1813,17 @@ try {
     $Y_VFormat.Add_SelectionChanged({ Update-YtDlpPreview })
     $Y_AFormat.Add_SelectionChanged({ Update-YtDlpPreview })
     $Y_CookieBrowser.Add_SelectionChanged({ Update-YtDlpPreview })
-    $Y_CheckMeta.Add_Click({ Update-YtDlpPreview })
-    $Y_CheckSubs.Add_Click({ Update-YtDlpPreview })
-    $Y_CheckSponsor.Add_Click({ Update-YtDlpPreview })
-    $Y_CheckCookie.Add_Click({ Update-YtDlpPreview })
-    $Y_CheckAutoPoToken.Add_Click({ Update-YtDlpPreview })
+    $Y_CheckMeta.Add_Checked({ Update-YtDlpPreview }); $Y_CheckMeta.Add_Unchecked({ Update-YtDlpPreview })
+    $Y_CheckSubs.Add_Checked({ Update-YtDlpPreview }); $Y_CheckSubs.Add_Unchecked({ Update-YtDlpPreview })
+    $Y_CheckSponsor.Add_Checked({ Update-YtDlpPreview }); $Y_CheckSponsor.Add_Unchecked({ Update-YtDlpPreview })
+    $Y_CheckCookie.Add_Checked({ Update-YtDlpPreview }); $Y_CheckCookie.Add_Unchecked({ Update-YtDlpPreview })
+    $Y_CheckAutoPoToken.Add_Checked({ $Y_PoToken.IsEnabled = $false; $Y_PoToken.Opacity = 0.4; Update-YtDlpPreview }) 
+    $Y_CheckAutoPoToken.Add_Unchecked({ $Y_PoToken.IsEnabled = $true; $Y_PoToken.Opacity = 1.0; Update-YtDlpPreview })
+    $Y_CookiePath.Add_TextChanged({ Update-YtDlpPreview })
     $Y_Link.Add_TextChanged({ Update-YtDlpPreview })
     $Y_CustomParams.Add_TextChanged({ Update-YtDlpPreview })
     $Y_OutDir.Add_TextChanged({ Update-YtDlpPreview })
+    $Y_PoToken.Add_TextChanged({ Update-YtDlpPreview })
 
     # Button event for "Update Tools" - Generates a small WPF Window to fetch WinGet updates
     $BtnUpdate.Add_Click({
@@ -1897,18 +1939,79 @@ try {
         Title="Settings" Width="420" Height="450" WindowStartupLocation="CenterScreen" Background="{DynamicResource BgBrush}" ResizeMode="NoResize">
     <Window.Resources>
         <SolidColorBrush x:Key="BgBrush" Color="$($window.Resources["BgBrush"].Color.ToString())"/>
+        <SolidColorBrush x:Key="CardBrush" Color="$($window.Resources["CardBrush"].Color.ToString())"/>
         <SolidColorBrush x:Key="TextBrush" Color="$($window.Resources["TextBrush"].Color.ToString())"/>
+        <SolidColorBrush x:Key="MutedBrush" Color="$($window.Resources["MutedBrush"].Color.ToString())"/>
         <SolidColorBrush x:Key="BorderBrush" Color="$($window.Resources["BorderBrush"].Color.ToString())"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="$($window.Resources["AccentBrush"].Color.ToString())"/>
         <SolidColorBrush x:Key="InputBgBrush" Color="$($window.Resources["InputBgBrush"].Color.ToString())"/>
+        
         <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Margin" Value="0,10,0,5"/></Style>
         <Style TargetType="CheckBox"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Margin" Value="0,10,0,0"/></Style>
+        
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="BgBorder" CornerRadius="4" Background="{TemplateBinding Background}" Margin="2">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BgBorder" Property="Background" Value="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="BgBorder" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="{DynamicResource InputBgBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton" Grid.Column="2" Focusable="false"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                            <Path x:Name="Arrow" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" Data="M0,0 L4,4 L8,0 z"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ContentSite" TextElement.Foreground="{TemplateBinding Foreground}" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                            
+                            <Popup x:Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Margin="0,4,0,0" MinWidth="{TemplateBinding ActualWidth}" MaxHeight="250">
+                                    <ScrollViewer Margin="2" SnapsToDevicePixels="True">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
+
         <Style TargetType="TextBox"><Setter Property="Background" Value="{DynamicResource InputBgBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="8"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
     </Window.Resources>
     <StackPanel Margin="20">
@@ -2586,8 +2689,7 @@ try {
                 # If it's already quoted, leave it alone
                 if ($str -match '^".*"$' -or $str -match "^'.*'$") { return $str }
 
-                # CRITICAL FIX: Quote strings that contain spaces OR FFmpeg special characters (:=)
-                # We include : and = in the regex so complex filters are wrapped in double quotes
+                # If it contains spaces or special characters, escape internal quotes and wrap in double quotes
                 if ($str -match '[\s&^<>|%!=:]') {
                     # Escape existing double quotes and wrap the whole thing in double quotes for CMD
                     return "`"$($str -replace '"', '\"')`""
@@ -2609,11 +2711,13 @@ try {
             $psi = New-Object System.Diagnostics.ProcessStartInfo
             $psi.FileName = "cmd.exe"
 
-            # This ensures FFmpeg runs inside the TEMP folder so it can find 'transforms.trf'
-            if ($job.WorkDir) { $psi.WorkingDirectory = $job.WorkDir }
+            if ($job.OutputDir -and -not (Test-Path $job.OutputDir)) {
+                [void](New-Item -ItemType Directory -Path $job.OutputDir -Force)
+            }
             else { $psi.WorkingDirectory = $ScriptDir }        
 
-            $psi.Arguments = "/c `"`"$toolPath`" $argString > `"$combinedLog`" 2>&1`""
+            $safeToolPath = "`"$toolPath`""
+            $psi.Arguments = "/c `"$safeToolPath $argString > `"$combinedLog`" 2>&1`""
         
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
@@ -3057,8 +3161,10 @@ try {
                 }
 
                 $jobStart = Get-Date
-                $existing = Get-ChildItem -Path $outDir -File -ErrorAction SilentlyContinue |
-                Select-Object -ExpandProperty FullName
+                $existing = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+                try {
+                    foreach ($f in [System.IO.Directory]::EnumerateFiles($outDir)) { [void]$existing.Add($f) }
+                } catch {}
 
                 function Get-YtDlpActiveOutputFile {
                     param(
@@ -3069,7 +3175,7 @@ try {
 
                     $candidates = Get-ChildItem -Path $OutDir -File -ErrorAction SilentlyContinue
                     foreach ($f in $candidates) {
-                        if ($ExistingFiles -contains $f.FullName) { continue }
+                        if ($ExistingFiles.Contains($f.FullName)) { continue }
 
                         $delta = ($f.LastWriteTime - $StartTime).TotalSeconds
                         if ($delta -lt -5) { continue }
@@ -3286,7 +3392,7 @@ try {
                         }
                         elseif ($outFormat -in @("srt", "vtt")) {
                             $outFile = Get-UniqueFileName (Join-Path $whisperOutDir "SCRIBED_$([System.IO.Path]::GetFileName($inFile))")
-                            $safeOutSrt = $outSrt.Replace('\', '/').Replace(':', '\:').Replace('[', '\[').Replace(']', '\]').Replace("'", "\'")
+                            $safeOutSrt = $outSrt.Replace('\', '/').Replace(':', '\:').Replace('[', '\[').Replace(']', '\]').Replace("'", "\'").Replace(',', '\,')
                             $burnArgs = @("-hide_banner", "-y", "-i", $inFile, "-vf", "subtitles='''$safeOutSrt'''", "-c:a", "copy", $outFile)
                             $script:State.BatchQueue += @{ Args = $burnArgs; SafeArgs = $burnArgs; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = ""; IsWhisper = $false; OutputDir = $whisperOutDir; InputFile = $inFile; OutputFile = $outFile; ListBox = $null; ListItem = $null }
                         }
@@ -3305,6 +3411,7 @@ try {
                         1 { "showfreqs=s=1280x720:mode=bar:colors=magenta" }
                         2 { "avectorscope=s=720x720:zoom=1.5:rc=0:gc=255:bc=0" }
                     }
+
                     if (-not [string]::IsNullOrWhiteSpace($S_VisImg.Text) -and (Test-Path -LiteralPath $S_VisImg.Text)) {
                         $argArray = @("-hide_banner", "-y", "-loop", "1", "-i", $S_VisImg.Text, "-i", $S_VisAudio.Text, "-filter_complex", "[1:a]$filter[vis];[0:v][vis]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2:format=auto,format=yuv420p[v]", "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-shortest", $outFile)
                     }
@@ -3313,7 +3420,7 @@ try {
                     }
                     $script:State.BatchQueue += @{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $null; ListItem = $null }
                 }
-                # Video Stabilizer Sub-Tab (Positional Parameter Fix)
+                # Video Stabilizer Sub-Tab
                 elseif ($subIdx -eq 3) {
                     if ([string]::IsNullOrWhiteSpace($S_StabIn.Text) -or -not (Test-Path -LiteralPath $S_StabIn.Text)) { 
                         [void][System.Windows.MessageBox]::Show("Please select a valid video file to stabilize!", "Error", 0, 48)
