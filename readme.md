@@ -37,6 +37,31 @@ Media Converter Pro is a high-performance, all-in-one media management suite �
 
 ---
 
+## Screenshots
+
+![1](/pictures/pic1.jpg)
+
+<br>
+
+![2](/pictures/pic2.jpg)
+
+<br>
+
+![3](/pictures/pic3.jpg)
+
+<br>
+
+![4](/pictures/pic4.jpg)
+
+<br>
+
+![5](/pictures/pic5.jpg)
+
+<br>
+
+
+---
+
 ## 🛠️ Requirements
 
 Media Converter Pro features a **Smart Auto-Installer**. If tools are missing, the app will offer to set them up via `winget`.
