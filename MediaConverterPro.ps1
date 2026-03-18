@@ -2755,6 +2755,13 @@ try {
 
             Write-ConvertLog "Executing: $toolPath $argString"
 
+            if ($job.IsYtDlp) {
+                $LogBox.AppendText("`r`n[INFO] Starting YouTube-DLP Job...`r`n")
+                $LogBox.AppendText("[INFO] Target URL: $($job.Args[-1])`r`n")
+                $LogBox.AppendText("[INFO] Requested Quality: $($job.SelectedRes)`r`n")
+                $LogBox.AppendText("[INFO] Negotiating with server for best available match...`r`n`r`n")
+            }
+
             if (Test-Path $script:State.tempLog) { Remove-Item $script:State.tempLog -Force -ErrorAction SilentlyContinue }
         
             $combinedLog = $script:State.tempLog
@@ -2940,6 +2947,55 @@ try {
                     else {
                         $StatusText.Text = "Finished Successfully."
                         $StatusText.Foreground = "#10B981"
+
+                        if ($job.IsYtDlp -and $script:State.ffprobeFound) {
+                            try {
+                                $finalFile = $job.OutputFile -replace '\.part$', '' -replace '\.ytdl$', ''
+                                if (-not $finalFile -or -not (Test-Path -LiteralPath $finalFile)) {
+                                    $finalFile = (Get-ChildItem -Path $job.OutputDir -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+                                }
+
+                                if ($finalFile -and (Test-Path -LiteralPath $finalFile)) {
+                                    $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+                                    $pinfoDur.FileName = $script:State.ffprobe
+                                    $pinfoDur.Arguments = "-v error -show_entries format=duration:stream=width,height -of json `"$finalFile`""
+                                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                                    $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                                    $jsonOut = $pDur.StandardOutput.ReadToEnd()
+                                    $pDur.WaitForExit()
+  
+                                    $dlTitle = [System.IO.Path]::GetFileNameWithoutExtension($finalFile)
+                                    $dlDur = "Unknown"
+                                    $dlQual = "Audio Only"
+  
+                                    if ($jsonOut) {
+                                        $mediaInfo = $jsonOut | ConvertFrom-Json
+                                        if ($mediaInfo.format.duration) {
+                                            $ts = [TimeSpan]::FromSeconds([double]$mediaInfo.format.duration)
+                                            $dlDur = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+                                        }
+                                        if ($mediaInfo.streams) {
+                                            $videoStream = $mediaInfo.streams | Where-Object { $_.width } | Select-Object -First 1
+                                            if ($videoStream) {
+                                                $dlQual = "$($videoStream.width)x$($videoStream.height)"
+                                                if ($videoStream.height -ge 2160) { $dlQual += " (4K)" }
+                                                elseif ($videoStream.height -ge 1440) { $dlQual += " (2K)" }
+                                                elseif ($videoStream.height -ge 1080) { $dlQual += " (1080p)" }
+                                                elseif ($videoStream.height -ge 720) { $dlQual += " (720p)" }
+                                            }
+                                        }
+                                    }
+                                    $LogBox.AppendText("`r`n----------------------------------------`r`n")
+                                    $LogBox.AppendText(" DOWNLOAD SUMMARY`r`n")
+                                    $LogBox.AppendText(" Title:   $dlTitle`r`n")
+                                    $LogBox.AppendText(" Time:    $dlDur`r`n")
+                                    $LogBox.AppendText(" Quality: $dlQual`r`n")
+                                    $LogBox.AppendText("----------------------------------------`r`n")
+                                }
+                            }
+                            catch {}
+                        }
+
                         $LogBox.AppendText("`r`n[SUCCESS] Task completed cleanly.`r`n")
 
                         if ($job.IsWhisper -or $job.CustomTool -match "upscayl") {
@@ -3255,6 +3311,7 @@ try {
                     HasCustomParams = $hasCustom
                     Retried         = $false
                     IsYtDlp         = $true
+                    SelectedRes     = (Get-CbVal $Y_Res)
                     OutputFile      = $null
                     OutputDir       = $outDir
                     JobStart        = $jobStart
