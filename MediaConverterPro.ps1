@@ -1813,6 +1813,35 @@ try {
 
     $Y_Type.SelectedIndex = -1
     $Y_Type.SelectedIndex = 0
+
+    # --- Bulletproof Auto-Detect Default Browser ---
+    try {
+        $tempFile = Join-Path $env:TEMP "mcp_browser_detect.html"
+        "<html></html>" | Out-File -FilePath $tempFile -Encoding utf8 -Force
+        
+        $sig = '[DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern uint FindExecutable(string lpFile, string lpDirectory, [Out] System.Text.StringBuilder lpResult);'
+        if (-not ("WinApi.ShellDetect" -as [type])) { Add-Type -MemberDefinition $sig -Name "ShellDetect" -Namespace "WinApi" }
+        
+        $outBuf = New-Object System.Text.StringBuilder 1024
+        [void][WinApi.ShellDetect]::FindExecutable($tempFile, $null, $outBuf)
+        $realPath = $outBuf.ToString().ToLower()
+        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+
+        if ($realPath -match "chrome") { $Y_CookieBrowser.SelectedIndex = 1 }
+        elseif ($realPath -match "firefox") { $Y_CookieBrowser.SelectedIndex = 2 }
+        elseif ($realPath -match "opera") { $Y_CookieBrowser.SelectedIndex = 3 }
+        elseif ($realPath -match "brave") { $Y_CookieBrowser.SelectedIndex = 4 }
+        else { $Y_CookieBrowser.SelectedIndex = 0 } # Fallback to Edge
+        
+        $LogBox.AppendText("[INFO] Auto-detected default browser for cookies: $($Y_CookieBrowser.Text)`r`n")
+    } catch {
+        $Y_CookieBrowser.SelectedIndex = 0
+    }
+    #default to using cookies from browser with auto-detection, but allow user to uncheck if they want
+    #$Y_CheckCookie.IsChecked = $true
+    $Y_CheckCookie.IsChecked = $false
+    # -----------------------------------------------
+
     $Y_Res.Add_SelectionChanged({ Update-YtDlpPreview })
     $Y_VFormat.Add_SelectionChanged({ Update-YtDlpPreview })
     $Y_AFormat.Add_SelectionChanged({ Update-YtDlpPreview })
