@@ -1268,90 +1268,93 @@ try {
 
     # Queue resuming logic initialized once UI finishes rendering
     $window.Add_ContentRendered({ 
-        $window.Dispatcher.InvokeAsync([Action] {
+            $window.Dispatcher.InvokeAsync([Action] {
         
-                Check-Missing-Tools 
+                    Check-Missing-Tools 
 
-                # 1. Background Pre-fetch for yt-dlp supported sites
-                if ($null -eq $script:State.SupportedSitesCache) {
-                    [void][System.Threading.Tasks.Task]::Run([Action]{
-                        try {
-                            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-                            $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
-                            $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -TimeoutSec 10
-                        } catch { $script:State.SupportedSitesCache = "fallback_offline" }
-                    })
-                }
-
-                # 2. Safe UI Initialization for Image Tab (Grey-out Logic)
-                if ($null -ne $I_CFormat) {
-                    $I_CFormat.Add_SelectionChanged({
-                        $fmt = Get-CbVal $I_CFormat
-                        if ($fmt -match "JPG" -or $fmt -match "WEBP") {
-                            $I_CQual.IsEnabled = $true; $I_CQual.Opacity = 1.0
-                        } else {
-                            $I_CQual.IsEnabled = $false; $I_CQual.Opacity = 0.4
-                        }
-                    })
-                    $I_CFormat.SelectedIndex = 0
-                }
-
-                # 3. Safe UI Initialization for all Drag & Drop TextBoxes
-                foreach ($tb in @($M_InVideo, $M_InAudio, $S_VisAudio, $S_VisImg, $S_StabIn, $S_ScribeIn, $S_UpscaleIn)) {
-                    if ($null -ne $tb) {
-                        $tb.Add_PreviewDragOver($DragEnterHandler)
-                        $tb.Add_DragLeave($DragLeaveHandler)
-                        $tb.Add_Drop($TextBoxDropHandler)
-                    }
-                }
-
-                # 4. Safe UI Initialization for ALL "Special" Tab Browse Buttons
-                if ($null -ne $S_BtnVisAud) { $S_BtnVisAud.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.flac;*.ogg|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_VisAudio.Text = $fd.FileName } }) }
-                if ($null -ne $S_BtnVisImg) { $S_BtnVisImg.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Images|*.jpg;*.png;*.jpeg|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_VisImg.Text = $fd.FileName } }) }
-                if ($null -ne $S_BtnStabIn) { $S_BtnStabIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Video|*.mp4;*.mkv;*.mov;*.avi|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_StabIn.Text = $fd.FileName } }) }
-                if ($null -ne $S_BtnScribeIn) { $S_BtnScribeIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Media Files|*.mp4;*.mkv;*.mp3;*.wav;*.m4a;*.ogg;*.flac|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_ScribeIn.Text = $fd.FileName } }) }
-                if ($null -ne $S_BtnUpscaleIn) { $S_BtnUpscaleIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Images|*.jpg;*.png;*.jpeg;*.webp|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_UpscaleIn.Text = $fd.FileName } }) }
-
-                # 5. Attempt to recover crashed/incomplete queues from the last run
-                if (Test-Path $QueueFile) {
-                    $ans = [System.Windows.MessageBox]::Show("Unfinished jobs were found from a previous session.`n`nWould you like to resume processing them?", "Resume Queue", "YesNo", 32)
-                    if ($ans -eq "Yes") {
-                        try {
-                            $savedQueue = Get-Content $QueueFile -Raw | ConvertFrom-Json
-                            foreach ($sq in $savedQueue) {
-                                $script:State.BatchQueue += @{
-                                    Args            = [string[]]$sq.Args
-                                    SafeArgs        = [string[]]$sq.SafeArgs
-                                    HasCustomParams = [bool]$sq.HasCustomParams
-                                    Retried         = [bool]$sq.Retried
-                                    IsYtDlp         = $sq.IsYtDlp
-                                    IsWhisper       = $sq.IsWhisper
-                                    CustomTool      = $sq.CustomTool
-                                    OutputDir       = $sq.OutputDir
-                                    InputFile       = $sq.InputFile
-                                    OutputFile      = $sq.OutputFile
-                                    ListBox         = $null
-                                    ListItem        = $null
+                    # 1. Background Pre-fetch for yt-dlp supported sites
+                    if ($null -eq $script:State.SupportedSitesCache) {
+                        [void][System.Threading.Tasks.Task]::Run([Action] {
+                                try {
+                                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                                    $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
+                                    $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -TimeoutSec 10
                                 }
-                            }
-                            $BtnRun.IsEnabled = $false; $BtnUpdate.IsEnabled = $false; $BtnCancel.IsEnabled = $true; $BtnSkip.IsEnabled = $true
-                            $LogBox.AppendText("[RESUME] Loaded $($script:State.BatchQueue.Count) jobs from previous session.`r`n")
-                            Process-NextJob
+                                catch { $script:State.SupportedSitesCache = "fallback_offline" }
+                            })
+                    }
+
+                    # 2. Safe UI Initialization for Image Tab (Grey-out Logic)
+                    if ($null -ne $I_CFormat) {
+                        $I_CFormat.Add_SelectionChanged({
+                                $fmt = Get-CbVal $I_CFormat
+                                if ($fmt -match "JPG" -or $fmt -match "WEBP") {
+                                    $I_CQual.IsEnabled = $true; $I_CQual.Opacity = 1.0
+                                }
+                                else {
+                                    $I_CQual.IsEnabled = $false; $I_CQual.Opacity = 0.4
+                                }
+                            })
+                        $I_CFormat.SelectedIndex = 0
+                    }
+
+                    # 3. Safe UI Initialization for all Drag & Drop TextBoxes
+                    foreach ($tb in @($M_InVideo, $M_InAudio, $S_VisAudio, $S_VisImg, $S_StabIn, $S_ScribeIn, $S_UpscaleIn)) {
+                        if ($null -ne $tb) {
+                            $tb.Add_PreviewDragOver($DragEnterHandler)
+                            $tb.Add_DragLeave($DragLeaveHandler)
+                            $tb.Add_Drop($TextBoxDropHandler)
                         }
-                        catch {
+                    }
+
+                    # 4. Safe UI Initialization for ALL "Special" Tab Browse Buttons
+                    if ($null -ne $S_BtnVisAud) { $S_BtnVisAud.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.flac;*.ogg|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_VisAudio.Text = $fd.FileName } }) }
+                    if ($null -ne $S_BtnVisImg) { $S_BtnVisImg.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Images|*.jpg;*.png;*.jpeg|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_VisImg.Text = $fd.FileName } }) }
+                    if ($null -ne $S_BtnStabIn) { $S_BtnStabIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Video|*.mp4;*.mkv;*.mov;*.avi|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_StabIn.Text = $fd.FileName } }) }
+                    if ($null -ne $S_BtnScribeIn) { $S_BtnScribeIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Media Files|*.mp4;*.mkv;*.mp3;*.wav;*.m4a;*.ogg;*.flac|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_ScribeIn.Text = $fd.FileName } }) }
+                    if ($null -ne $S_BtnUpscaleIn) { $S_BtnUpscaleIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Images|*.jpg;*.png;*.jpeg;*.webp|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_UpscaleIn.Text = $fd.FileName } }) }
+
+                    # 5. Attempt to recover crashed/incomplete queues from the last run
+                    if (Test-Path $QueueFile) {
+                        $ans = [System.Windows.MessageBox]::Show("Unfinished jobs were found from a previous session.`n`nWould you like to resume processing them?", "Resume Queue", "YesNo", 32)
+                        if ($ans -eq "Yes") {
+                            try {
+                                $savedQueue = Get-Content $QueueFile -Raw | ConvertFrom-Json
+                                foreach ($sq in $savedQueue) {
+                                    $script:State.BatchQueue += @{
+                                        Args            = [string[]]$sq.Args
+                                        SafeArgs        = [string[]]$sq.SafeArgs
+                                        HasCustomParams = [bool]$sq.HasCustomParams
+                                        Retried         = [bool]$sq.Retried
+                                        IsYtDlp         = $sq.IsYtDlp
+                                        IsWhisper       = $sq.IsWhisper
+                                        CustomTool      = $sq.CustomTool
+                                        OutputDir       = $sq.OutputDir
+                                        InputFile       = $sq.InputFile
+                                        OutputFile      = $sq.OutputFile
+                                        ListBox         = $null
+                                        ListItem        = $null
+                                    }
+                                }
+                                $BtnRun.IsEnabled = $false; $BtnUpdate.IsEnabled = $false; $BtnCancel.IsEnabled = $true; $BtnSkip.IsEnabled = $true
+                                $LogBox.AppendText("[RESUME] Loaded $($script:State.BatchQueue.Count) jobs from previous session.`r`n")
+                                Process-NextJob
+                            }
+                            catch {
+                                [System.GC]::Collect()
+                                Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue
+                            }
+                        }
+                        else {
                             [System.GC]::Collect()
                             Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue
                         }
-                    } else {
-                        [System.GC]::Collect()
-                        Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue
                     }
-                }
         
-                $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+                    $window.Cursor = [System.Windows.Input.Cursors]::Arrow
 
-            }, [System.Windows.Threading.DispatcherPriority]::ApplicationIdle)
-    })
+                }, [System.Windows.Threading.DispatcherPriority]::ApplicationIdle)
+        })
 
     # Helper function to extract text values cleanly from WPF ComboBox objects
     function Get-CbVal([System.Windows.Controls.ComboBox]$cb) {
@@ -1794,15 +1797,16 @@ try {
     
     # Disable Image Quality combobox if format is not JPG or WEBP
     $I_CFormat.Add_SelectionChanged({
-        $fmt = Get-CbVal $I_CFormat
-        if ($fmt -match "JPG" -or $fmt -match "WEBP") {
-            $I_CQual.IsEnabled = $true
-            $I_CQual.Opacity = 1.0
-        } else {
-            $I_CQual.IsEnabled = $false
-            $I_CQual.Opacity = 0.4
-        }
-    })
+            $fmt = Get-CbVal $I_CFormat
+            if ($fmt -match "JPG" -or $fmt -match "WEBP") {
+                $I_CQual.IsEnabled = $true
+                $I_CQual.Opacity = 1.0
+            }
+            else {
+                $I_CQual.IsEnabled = $false
+                $I_CQual.Opacity = 0.4
+            }
+        })
     # Trigger it once to set the initial state correctly
     $I_CFormat.SelectedIndex = -1
     $I_CFormat.SelectedIndex = 0
@@ -1867,73 +1871,114 @@ try {
 
                     $BtnRun.IsEnabled = $false
                     $BtnUpdate.IsEnabled = $false
-                    $LogBox.AppendText("`r`n[UPDATE] Starting dependency updates in background...`r`n")
-                    $StatusText.Text = "Starting updates..."
-                    $PBar.Value = 5
                     $TaskbarProgress.ProgressState = "Normal"
-            
-                    $ytPath = $script:State.ytdlp
-                    $ytFound = $script:State.ytdlpFound
-            
-                    # Use BackgroundWorker so UI doesn't freeze while updating tools
-                    $bgWorker = New-Object System.ComponentModel.BackgroundWorker
-                    $bgWorker.Add_DoWork({
-                            if ($doYt -and $ytFound) {
-                                $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating yt-dlp..."; $PBar.Value = 20; $TaskbarProgress.ProgressValue = 0.2 })
-                                
-                                # Check if it's the WinGet version, and update via WinGet. Otherwise, fallback to -U
-                                if ($script:isWinGetVersion) {
-                                    $p = Start-Process winget -ArgumentList "upgrade yt-dlp.yt-dlp --silent --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Hidden -PassThru
-                                } else {
-                                    $p = Start-Process -FilePath $ytPath -ArgumentList "-U" -Wait -WindowStyle Hidden -PassThru
-                                }
 
-                                if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] yt-dlp update failed or cancelled.`r`n") }) }
-                                else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] yt-dlp update finished.`r`n") }) }
-                            }
-                            if ($doFF) {
-                                $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating FFmpeg..."; $PBar.Value = 40; $TaskbarProgress.ProgressValue = 0.4 })
-                                $p = Start-Process winget -ArgumentList "upgrade Gyan.FFmpeg --silent --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Hidden -PassThru
-                                if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] FFmpeg update failed or cancelled.`r`n") }) }
-                                else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] FFmpeg update finished.`r`n") }) }
-                            }
-                            if ($doNode) {
-                                $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating Node.js..."; $PBar.Value = 60; $TaskbarProgress.ProgressValue = 0.6 })
-                                $p = Start-Process winget -ArgumentList "upgrade OpenJS.NodeJS --silent --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Hidden -PassThru
-                                if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] Node.js update failed or cancelled.`r`n") }) }
-                                else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] Node.js update finished.`r`n") }) }
-                            }
-                            if ($doWhisper) {
-                                $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating Whisper AI..."; $PBar.Value = 80; $TaskbarProgress.ProgressValue = 0.8 })
-                                if (Get-Command "python" -ErrorAction SilentlyContinue) {
-                                    $p = Start-Process cmd.exe -ArgumentList "/c pip install -U openai-whisper" -Wait -WindowStyle Hidden -PassThru
-                                    if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] Whisper update failed or cancelled.`r`n") }) }
-                                    else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] Whisper update finished.`r`n") }) }
+                    # Setup logging to update.log in the main logs folder
+                    $UpdateLogFile = Join-Path $LogDir "update.log"
+                    function Write-UpdLog([string]$Message) {
+                        $LogBox.AppendText("$Message`r`n")
+                        Add-Content -Path $UpdateLogFile -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message"
+                    }
+
+                    Write-UpdLog "[UPDATE] Starting dependency updates..."
+            
+                    # Helper function to force the UI to refresh visually before blocking it with Start-Process
+                    function Force-UIRefresh {
+                        $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
+                    }
+
+                    # Helper function to properly translate WinGet and standard exit codes to the Live Log
+                    function Log-UpdateResult($ToolName, $Proc) {
+                        if (-not $Proc) { return }
+                        $code = $Proc.ExitCode
+                        if ($code -eq 0) { 
+                            Write-UpdLog "[UPDATE] $ToolName updated successfully." 
+                        } 
+                        elseif ($code -in @(-1978335189, 2316632107, -1978335188, 2316632108)) { 
+                            Write-UpdLog "[INFO] $ToolName is already up-to-date." 
+                        } 
+                        else { 
+                            Write-UpdLog "[WARNING] $ToolName update failed or cancelled (Exit Code: $code)." 
+                        }
+                    }
+
+                    if ($doYt -and $script:State.ytdlpFound) {
+                        $StatusText.Text = "Updating yt-dlp..."
+                        $PBar.Value = 20; Force-UIRefresh
+                        
+                        if ($script:isWinGetVersion) {
+                            $p = Start-Process winget -ArgumentList "upgrade --id yt-dlp.yt-dlp --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
+                        }
+                        else {
+                            $p = Start-Process cmd.exe -ArgumentList "/c `"$($script:State.ytdlp)`" -U" -Wait -WindowStyle Normal -PassThru
+                        }
+                        Log-UpdateResult "yt-dlp" $p
+                    }
+                    
+                    if ($doFF) {
+                        $StatusText.Text = "Updating FFmpeg..."
+                        $PBar.Value = 40; Force-UIRefresh
+                        $p = Start-Process winget -ArgumentList "upgrade --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
+                        Log-UpdateResult "FFmpeg" $p
+                    }
+                    
+                    if ($doNode) {
+                        $StatusText.Text = "Updating Node.js..."
+                        $PBar.Value = 60; Force-UIRefresh
+                        $p = Start-Process winget -ArgumentList "upgrade --id OpenJS.NodeJS --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
+                        Log-UpdateResult "Node.js" $p
+                    }
+                    
+                    if ($doWhisper) {
+                        $StatusText.Text = "Updating Whisper AI..."
+                        $PBar.Value = 80; Force-UIRefresh
+                        if (Get-Command "python" -ErrorAction SilentlyContinue) {
+                            $tempPipLog = Join-Path $env:TEMP "whisper_update.log"
+                            if (Test-Path $tempPipLog) { Remove-Item $tempPipLog -Force -ErrorAction SilentlyContinue }
+                            
+                            # Using PowerShell to run pip so it will "Tee" the output to a file while showing it to the user. No pause!
+                            $p = Start-Process powershell.exe -ArgumentList "-NoProfile -Command `"Write-Host 'Updating Whisper AI...'; pip install -U openai-whisper | Tee-Object -FilePath '$tempPipLog'`"" -Wait -WindowStyle Normal -PassThru
+                            
+                            if ($p.ExitCode -eq 0) {
+                                $pipOut = if (Test-Path $tempPipLog) { Get-Content $tempPipLog -Raw } else { "" }
+                                
+                                # Dump verbose pip output into the update.log file
+                                if (-not [string]::IsNullOrWhiteSpace($pipOut)) {
+                                    Add-Content -Path $UpdateLogFile -Value "`n--- Whisper Pip Verbose Log ---`n$pipOut`n-------------------------------"
+                                }
+                                
+                                # Read the text output to see if it actually installed something new
+                                if ($pipOut -match "Successfully installed") {
+                                    Write-UpdLog "[UPDATE] Whisper updated successfully."
                                 }
                                 else {
-                                    $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] Python not found. Skipping Whisper update.`r`n") })
+                                    Write-UpdLog "[INFO] Whisper is already up-to-date."
                                 }
                             }
-                            if ($doUpscale) {
-                                $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating Upscayl..."; $PBar.Value = 90; $TaskbarProgress.ProgressValue = 0.9 })
-                                $p = Start-Process winget -ArgumentList "upgrade --id Upscayl.Upscayl --silent --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Hidden -PassThru
-                                if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] Upscayl update failed or cancelled.`r`n") }) }
-                                else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] Upscayl update finished.`r`n") }) }
+                            else {
+                                Write-UpdLog "[WARNING] Whisper update failed or cancelled (Exit Code: $($p.ExitCode))."
                             }
-                        })
-            
-                    $bgWorker.Add_RunWorkerCompleted({
-                            $StatusText.Text = "Updates completed!"
-                            $PBar.Value = 100
-                            $TaskbarProgress.ProgressValue = 1.0
-                            $TaskbarProgress.ProgressState = "None"
-                            $LogBox.AppendText("[UPDATE] Dependency update process finished.`r`n")
-                            $BtnRun.IsEnabled = $true
-                            $BtnUpdate.IsEnabled = $true
-                            Find-Tools 
-                        })
-            
-                    $bgWorker.RunWorkerAsync()
+                        }
+                        else {
+                            Write-UpdLog "[WARNING] Python not found. Skipping Whisper update."
+                        }
+                    }
+                    
+                    if ($doUpscale) {
+                        $StatusText.Text = "Updating Upscayl..."
+                        $PBar.Value = 90; Force-UIRefresh
+                        $p = Start-Process winget -ArgumentList "upgrade --id Upscayl.Upscayl --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
+                        Log-UpdateResult "Upscayl" $p
+                    }
+
+                    $StatusText.Text = "Updates completed!"
+                    $PBar.Value = 100
+                    $TaskbarProgress.ProgressState = "None"
+                    Write-UpdLog "[UPDATE] Dependency update process finished."
+                    
+                    $BtnRun.IsEnabled = $true
+                    $BtnUpdate.IsEnabled = $true
+                    Find-Tools 
                 })
             [void]$updWin.ShowDialog()
         })
@@ -2690,19 +2735,19 @@ try {
             foreach ($arg in $job.Args) { $rawArgs += $arg.ToString().Trim() }
 
             $argString = ($rawArgs | ForEach-Object {
-                $str = [string]$_
-                if ([string]::IsNullOrWhiteSpace($str)) { return '""' }
+                    $str = [string]$_
+                    if ([string]::IsNullOrWhiteSpace($str)) { return '""' }
                 
-                # If it's already quoted, leave it alone
-                if ($str -match '^".*"$' -or $str -match "^'.*'$") { return $str }
+                    # If it's already quoted, leave it alone
+                    if ($str -match '^".*"$' -or $str -match "^'.*'$") { return $str }
 
-                # If it contains spaces or special characters, escape internal quotes and wrap in double quotes
-                if ($str -match '[\s&^<>|%!=:]') {
-                    # Escape existing double quotes and wrap the whole thing in double quotes for CMD
-                    return "`"$($str -replace '"', '\"')`""
-                }
-                return $str
-            }) -join " "
+                    # If it contains spaces or special characters, escape internal quotes and wrap in double quotes
+                    if ($str -match '[\s&^<>|%!=:]') {
+                        # Escape existing double quotes and wrap the whole thing in double quotes for CMD
+                        return "`"$($str -replace '"', '\"')`""
+                    }
+                    return $str
+                }) -join " "
 
             $toolPath = if ($job.IsYtDlp) { $script:State.ytdlp } 
             elseif ($job.CustomTool) { $job.CustomTool } 
@@ -3171,7 +3216,8 @@ try {
                 $existing = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
                 try {
                     foreach ($f in [System.IO.Directory]::EnumerateFiles($outDir)) { [void]$existing.Add($f) }
-                } catch {}
+                }
+                catch {}
 
                 function Get-YtDlpActiveOutputFile {
                     param(
@@ -3697,7 +3743,8 @@ try {
                                 if ($qualCb -match "Medium") { $argArray += @("-qscale", "50") }
                                 elseif ($qualCb -match "Low") { $argArray += @("-qscale", "20") }
                                 else { $argArray += @("-qscale", "80") }
-                            } else {
+                            }
+                            else {
                                 if ($qualCb -match "Medium") { $argArray += @("-q:v", "6") }
                                 elseif ($qualCb -match "Low") { $argArray += @("-q:v", "12") }
                                 else { $argArray += @("-q:v", "2") }
