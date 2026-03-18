@@ -1880,7 +1880,14 @@ try {
                     $bgWorker.Add_DoWork({
                             if ($doYt -and $ytFound) {
                                 $window.Dispatcher.Invoke([Action] { $StatusText.Text = "Updating yt-dlp..."; $PBar.Value = 20; $TaskbarProgress.ProgressValue = 0.2 })
-                                $p = Start-Process -FilePath $ytPath -ArgumentList "-U" -Wait -WindowStyle Hidden -PassThru
+                                
+                                # Check if it's the WinGet version, and update via WinGet. Otherwise, fallback to -U
+                                if ($script:isWinGetVersion) {
+                                    $p = Start-Process winget -ArgumentList "upgrade yt-dlp.yt-dlp --silent --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Hidden -PassThru
+                                } else {
+                                    $p = Start-Process -FilePath $ytPath -ArgumentList "-U" -Wait -WindowStyle Hidden -PassThru
+                                }
+
                                 if ($p.ExitCode -ne 0) { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[WARNING] yt-dlp update failed or cancelled.`r`n") }) }
                                 else { $window.Dispatcher.Invoke([Action] { $LogBox.AppendText("[UPDATE] yt-dlp update finished.`r`n") }) }
                             }
