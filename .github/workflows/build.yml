@@ -1,0 +1,25 @@
+name: Build MediaConverterPro EXE
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PS2EXE
+        run: Install-Module -Name ps2exe -Force -Scope CurrentUser
+
+      - name: Build EXE
+        run: powershell -ExecutionPolicy Bypass -File ./convert_ps2exe.ps1
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaConverterPro
+          path: ./MediaConverterPro.exe

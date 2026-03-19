@@ -25,7 +25,11 @@ Write-Host "Compiling... please wait." -ForegroundColor Yellow
 # Convert PS1 to EXE using portable parameters
 # -noConsole: Hides the background CMD window when the EXE starts
 # -sta: Required for WPF/GUI applications
-Invoke-Ps2Exe -inputFile $script_path -outputFile $output_path -sta -icon $icon_path | Out-Null
+if (Test-Path $icon_path) {
+    Invoke-Ps2Exe -inputFile $script_path -outputFile $output_path -sta -icon $icon_path | Out-Null
+} else {
+    Invoke-Ps2Exe -inputFile $script_path -outputFile $output_path -sta | Out-Null
+}
 
 #if you dont want ico: Invoke-Ps2Exe -inputFile $script_path -outputFile $output_path -sta | Out-Null 
 # no -noConsole as a workaround for potential false positives in antivirus software, but can be added if you want a cleaner user experience

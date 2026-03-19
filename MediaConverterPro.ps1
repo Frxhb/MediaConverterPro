@@ -83,9 +83,9 @@ $QueueFile = Join-Path $ConfigDir "mcp_queue.json"
 $CrashLog = Join-Path $LogDir "crash.log"
 $ConvertLog = Join-Path $LogDir "convert.log"
 
-# Helper functions for logging application events and errors
-function Write-CrashLog { param([string]$Message); Add-Content -Path $CrashLog -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] ERROR: $Message" }
-function Write-ConvertLog { param([string]$Message); Add-Content -Path $ConvertLog -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message" }
+# Helper functions for logging application events and errors (Thread/Lock safe)
+function Write-CrashLog { param([string]$Message); try { Add-Content -Path $CrashLog -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] ERROR: $Message" -ErrorAction Stop } catch {} }
+function Write-ConvertLog { param([string]$Message); try { Add-Content -Path $ConvertLog -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message" -ErrorAction Stop } catch {} }
 
 # Function to generate a unique filename to prevent overwriting existing files
 function Get-UniqueFileName ([string]$FilePath) {
@@ -2271,8 +2271,8 @@ try {
 
     # Core function for Drag & Drop parsing: resolves files inside directories or directly checks regex match
     function Add-ToList([System.Windows.Controls.ListBox]$List, [string[]]$Paths, [string]$ExtRegex) {
-        $existingItems = @{}
-        foreach ($item in $List.Items) { $existingItems[$item.ToString()] = $true }
+        $existingItems = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach ($item in $List.Items) { [void]$existingItems.Add($item.ToString()) }
 
         foreach ($p in $Paths) {
             $pStr = [string]$p
@@ -2280,9 +2280,9 @@ try {
                 try {
                     $files = [System.IO.Directory]::GetFiles($pStr, "*.*", [System.IO.SearchOption]::TopDirectoryOnly)
                     foreach ($f in $files) {
-                        if ($f -match $ExtRegex -and -not $existingItems.ContainsKey($f)) { 
+                        # (?i) forces case-insensitive regex matching for extensions like .MP4
+                        if ($f -match "(?i)$ExtRegex" -and $existingItems.Add($f)) { 
                             [void]$List.Items.Add($f)
-                            $existingItems[$f] = $true
                         }
                     }
                 }
@@ -2292,9 +2292,8 @@ try {
                 }
             } 
             elseif ([System.IO.File]::Exists($pStr)) { 
-                if ($pStr -match $ExtRegex -and -not $existingItems.ContainsKey($pStr)) { 
+                if ($pStr -match "(?i)$ExtRegex" -and $existingItems.Add($pStr)) { 
                     [void]$List.Items.Add($pStr) 
-                    $existingItems[$pStr] = $true
                 } 
             }
         }
@@ -3998,10 +3997,7 @@ try {
                 $script:State.BatchQueue = @($currentJob)
                 $script:State.CurrentJobIndex = 0
             
-                if ($currentJob.IsWhisper) {
-                    try { Get-Process -Name "python" | Where-Object { $_.MainWindowTitle -eq "" } | Stop-Process -Force -ErrorAction SilentlyContinue } catch {}
-                }
-            
+                # Cleanly kill the active CMD wrapper and all its specific child processes (including Python/FFmpeg)
                 Kill-ProcessTree $script:State.p
             
                 if ($currentJob.IsYtDlp) {
