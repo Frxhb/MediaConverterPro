@@ -35,7 +35,40 @@ Media Converter Pro is a high-performance, all-in-one media management suite �
 - **Video Stabilizer:** 2-pass "vidstab" algorithm to fix shaky handheld footage.
 - **Instant Muxing:** Merge video and audio streams without re-encoding.
 
----
+
+## 🛠️ Requirements
+
+Media Converter Pro features a **Smart Auto-Installer**. If tools are missing, the app will offer to set them up via `winget`.
+
+* **[FFmpeg](https://ffmpeg.org/):** The core media engine.
+* **[yt-dlp](https://github.com/yt-dlp/yt-dlp):** For web extraction.
+* **[Node.js](https://nodejs.org/):** For YouTube signature decryption.
+* **[Python](https://www.python.org/):** Required for Whisper AI features.
+
+
+## 🚀 Installation & Usage
+
+You can run Media Converter Pro in two ways:
+
+### Option 1: Running the Script (.ps1) - Recommended
+1. **Download** the `MediaConverterPro.ps1` file.
+2. **Right-click** the file and select **Run with PowerShell**.
+3. **Execution Policy Note:** If Windows prevents the script from running, you can bypass this by opening PowerShell and typing:
+   `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
+   *Alternatively:* Open the script in a text editor (like Notepad), copy everything, paste it into a new PowerShell window, and hit Enter.
+
+### Option 2: Running the Executable (.exe)
+If you have a compiled version:
+1. Simply double-click `MediaConverterPro.exe`. You can retrieve the newest .exe from the [releases](https://github.com/Frxhb/MediaConverterPro/releases/latest) page.
+2. **⚠️ Antivirus Note:** Some antivirus engines (like Windows Defender) may falsely flag compiled PowerShell scripts as a "Positive" threat. This is a common issue with `PS2EXE` compilers. If this happens, you can either add an exclusion or stick to the `.ps1` script version.
+
+
+## 🛡️ Technical Highlights
+
+- **Queue Persistence:** If the app closes, your job queue is saved and can be resumed.
+- **Live Logs:** Real-time STDOUT/STDERR monitoring for every task.
+- **Isolation:** Every process runs in the background; the UI stays fluid and responsive.
+- **Custom Flags:** Inject your own FFmpeg or yt-dlp arguments for ultimate control.
 
 ## Screenshots
 
@@ -58,47 +91,6 @@ Media Converter Pro is a high-performance, all-in-one media management suite �
 ![5](/pictures/pic5.jpg)
 
 <br>
-
-
----
-
-## 🛠️ Requirements
-
-Media Converter Pro features a **Smart Auto-Installer**. If tools are missing, the app will offer to set them up via `winget`.
-
-* **[FFmpeg](https://ffmpeg.org/):** The core media engine.
-* **[yt-dlp](https://github.com/yt-dlp/yt-dlp):** For web extraction.
-* **[Node.js](https://nodejs.org/):** For YouTube signature decryption.
-* **[Python](https://www.python.org/):** Required for Whisper AI features.
-
----
-
-## 🚀 Installation & Usage
-
-You can run Media Converter Pro in two ways:
-
-### Option 1: Running the Script (.ps1) - Recommended
-1. **Download** the `MediaConverterPro.ps1` file.
-2. **Right-click** the file and select **Run with PowerShell**.
-3. **Execution Policy Note:** If Windows prevents the script from running, you can bypass this by opening PowerShell and typing:
-   `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
-   *Alternatively:* Open the script in a text editor (like Notepad), copy everything, paste it into a new PowerShell window, and hit Enter.
-
-### Option 2: Running the Executable (.exe)
-If you have a compiled version:
-1. Simply double-click `MediaConverterPro.exe`. You can retrieve the newest .exe from the [releases](https://github.com/Frxhb/MediaConverterPro/releases/latest) page.
-2. **⚠️ Antivirus Note:** Some antivirus engines (like Windows Defender) may falsely flag compiled PowerShell scripts as a "Positive" threat. This is a common issue with `PS2EXE` compilers. If this happens, you can either add an exclusion or stick to the `.ps1` script version.
-
----
-
-## 🛡️ Technical Highlights
-
-- **Queue Persistence:** If the app closes, your job queue is saved and can be resumed.
-- **Live Logs:** Real-time STDOUT/STDERR monitoring for every task.
-- **Isolation:** Every process runs in the background; the UI stays fluid and responsive.
-- **Custom Flags:** Inject your own FFmpeg or yt-dlp arguments for ultimate control.
-
----
 
 ## ⚖️ License
 Distributed under the **MIT License**. See `LICENSE` for more information.
