@@ -1,4 +1,4 @@
-Clear-Host
+#Clear-Host
 Import-Module ps2exe -ErrorAction Stop
 
 # Dynamically set the path to the current folder where this script is running

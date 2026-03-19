@@ -22,7 +22,7 @@ jobs:
         run: Install-Module -Name ps2exe -Force -Scope CurrentUser
 
       - name: Build EXE
-        shell: pwsh
+        shell: powershell
         run: |
           Import-Module ps2exe
           ./convert_ps2exe.ps1
