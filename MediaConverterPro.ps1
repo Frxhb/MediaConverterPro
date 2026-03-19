@@ -119,6 +119,8 @@ try {
         ffprobe             = "ffprobe.exe"
         ytdlp               = "yt-dlp.exe"
         upscayl             = ""
+        python              = "python.exe"
+        whisperFound        = $false
         ffmpegFound         = $false
         ffprobeFound        = $false
         ytdlpFound          = $false
@@ -137,14 +139,26 @@ try {
 
     # Function to locate all required third-party tools on the host system
     function Find-Tools {
-        $script:State.ffmpegFound = $false
-        $script:State.ffprobeFound = $false
-        $script:State.ytdlpFound = $false
-        $script:State.jsRuntimeFound = $false
-        $script:State.upscaylFound = $false
-        $script:isWinGetVersion = $false
+        $script:State.ffmpegFound = $false; $script:State.ffprobeFound = $false; $script:State.ytdlpFound = $false; $script:State.jsRuntimeFound = $false; $script:State.upscaylFound = $false; $script:isWinGetVersion = $false
 
-        # Ensure environment path is fresh
+        # 1. Attempt to load fast from config cache
+        if (Test-Path $ConfigFile) {
+            try {
+                $cached = Get-Content $ConfigFile | ConvertFrom-Json
+                if ($cached.ffmpeg -and (Test-Path $cached.ffmpeg)) { $script:State.ffmpeg = $cached.ffmpeg; $script:State.ffmpegFound = $true }
+                if ($cached.ffprobe -and (Test-Path $cached.ffprobe)) { $script:State.ffprobe = $cached.ffprobe; $script:State.ffprobeFound = $true }
+                if ($cached.ytdlp -and (Test-Path $cached.ytdlp)) { $script:State.ytdlp = $cached.ytdlp; $script:State.ytdlpFound = $true; $script:isWinGetVersion = [bool]$cached.isWinGetVersion }
+                if ($cached.upscayl -and (Test-Path $cached.upscayl)) { 
+                    $script:State.upscayl = $cached.upscayl; $script:State.upscaylModels = $cached.upscaylModels; $script:State.upscaylWorkDir = $cached.upscaylWorkDir; $script:State.upscaylFound = $true 
+                }
+                # Check for Node.js quickly
+                if ((Get-Command "node.exe" -ErrorAction SilentlyContinue) -or (Get-Command "deno.exe" -ErrorAction SilentlyContinue)) { $script:State.jsRuntimeFound = $true }
+                
+                if ($script:State.ffmpegFound -and $script:State.ytdlpFound) { return } # Skip the heavy loop if everything essential is found!
+            } catch {}
+        }
+
+        # Ensure environment path is fresh for the loop
         $env:PATH = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 
         # Check for system-installed yt-dlp (specifically WinGet/WindowsApps)
@@ -241,6 +255,32 @@ try {
         if ($script:State.ytdlpFound) {
             [void](Start-Process -FilePath $script:State.ytdlp -ArgumentList "--rm-cache-dir" -WindowStyle Hidden)
         }
+
+        # --- NEW CACHE SAVING BLOCK ---
+        # Save found paths to the config file to speed up the next launch
+        if ($script:State.ffmpegFound -or $script:State.ytdlpFound -or $script:State.upscaylFound) {
+            $cacheObj = @{}
+            if (Test-Path $ConfigFile) {
+                try { $cacheObj = Get-Content $ConfigFile -Raw | ConvertFrom-Json } catch {}
+            }
+            
+            # Append or update tool paths in the config object
+            if ($script:State.ffmpegFound) { $cacheObj | Add-Member -MemberType NoteProperty -Name "ffmpeg" -Value $script:State.ffmpeg -Force }
+            if ($script:State.ffprobeFound) { $cacheObj | Add-Member -MemberType NoteProperty -Name "ffprobe" -Value $script:State.ffprobe -Force }
+            if ($script:State.ytdlpFound) { 
+                $cacheObj | Add-Member -MemberType NoteProperty -Name "ytdlp" -Value $script:State.ytdlp -Force 
+                $cacheObj | Add-Member -MemberType NoteProperty -Name "isWinGetVersion" -Value $script:isWinGetVersion -Force 
+            }
+            if ($script:State.upscaylFound) { 
+                $cacheObj | Add-Member -MemberType NoteProperty -Name "upscayl" -Value $script:State.upscayl -Force
+                $cacheObj | Add-Member -MemberType NoteProperty -Name "upscaylModels" -Value $script:State.upscaylModels -Force
+                $cacheObj | Add-Member -MemberType NoteProperty -Name "upscaylWorkDir" -Value $script:State.upscaylWorkDir -Force
+            }
+
+            # Save silently to avoid interrupting startup
+            try { $cacheObj | ConvertTo-Json -Depth 5 | Set-Content $ConfigFile -Encoding UTF8 -Force } catch {}
+        }
+        # ------------------------------
     }
     
     # Run the tool finder
@@ -250,11 +290,12 @@ try {
     # 3. CONFIGURATION MANAGEMENT
     # ==============================================================================
     
-    # Load configuration from JSON or define defaults
-    $DefaultConfig = @{ Theme = "Light"; WhisperModel = "base"; PlaySound = $true; AlwaysOnTop = $false; ThreadLimit = "Auto"; DefaultOutDir = ""; AutoDelete = $false }
-    if (Test-Path $ConfigFile) { try { $Config = Get-Content $ConfigFile | ConvertFrom-Json } catch { $Config = $DefaultConfig } } else { $Config = $DefaultConfig }
+    # Load configuration from JSON or define defaults as a proper PSCustomObject
+    $DefaultConfig = [PSCustomObject]@{ Theme = "Light"; WhisperModel = "base"; PlaySound = $true; AlwaysOnTop = $false; ThreadLimit = "Auto"; DefaultOutDir = ""; AutoDelete = $false }
+    if (Test-Path $ConfigFile) { try { $Config = Get-Content $ConfigFile -Raw | ConvertFrom-Json } catch { $Config = $DefaultConfig } } else { $Config = $DefaultConfig }
     
-    # Check and append missing properties to support backwards compatibility of config files
+    # Ensure ALL required UI properties exist (repairs the file if Find-Tools created it first)
+    if ($null -eq $Config.Theme) { $Config | Add-Member -MemberType NoteProperty -Name "Theme" -Value "Light" }
     if ($null -eq $Config.WhisperModel) { $Config | Add-Member -MemberType NoteProperty -Name "WhisperModel" -Value "base" }
     if ($null -eq $Config.PlaySound) { $Config | Add-Member -MemberType NoteProperty -Name "PlaySound" -Value $true }
     if ($null -eq $Config.AlwaysOnTop) { $Config | Add-Member -MemberType NoteProperty -Name "AlwaysOnTop" -Value $false }
@@ -1358,17 +1399,9 @@ try {
 
     # Helper function to extract text values cleanly from WPF ComboBox objects
     function Get-CbVal([System.Windows.Controls.ComboBox]$cb) {
-        if ($cb.SelectedIndex -ge 0) {
-            $item = $cb.Items[$cb.SelectedIndex]
-            if ($item -is [System.Windows.Controls.ComboBoxItem]) {
-                return $item.Content.ToString().Trim()
-            }
-            return $item.ToString().Trim()
-        }
-        if (-not [string]::IsNullOrWhiteSpace($cb.Text)) {
-            return $cb.Text.Trim()
-        }
-        return ""
+        if ($cb.SelectedItem -is [System.Windows.Controls.ComboBoxItem]) { return $cb.SelectedItem.Content.ToString().Trim() }
+        if ($cb.SelectedItem) { return $cb.SelectedItem.ToString().Trim() }
+        return "$($cb.Text)".Trim()
     }
 
     # Helper function to persist the pending job queue state to disk
@@ -1699,21 +1732,21 @@ try {
         if ($A_ParamsPreview) { $A_ParamsPreview.Text = $previewString.Trim() }
     }
 
-    $script:State.IsUpdatingUI = $false
-    
+    # Setup a DispatcherTimer to "debounce" UI updates (prevents lag when typing fast)
+    $script:State.PreviewTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:State.PreviewTimer.Interval = [TimeSpan]::FromMilliseconds(250)
+    $script:State.PreviewTimer.Add_Tick({
+        $script:State.PreviewTimer.Stop()
+        Update-AudioFfmpegPreview
+        Update-FfmpegPreview
+        Update-YtDlpPreview
+    })
+
     # Generic function to force an update to all active tool previews
     function Update-AllPreviews {
-        if ($script:State.IsUpdatingUI) { return }
-        
-        $script:State.IsUpdatingUI = $true
-        try {
-            Update-AudioFfmpegPreview
-            Update-FfmpegPreview
-            Update-YtDlpPreview
-        }
-        finally {
-            $script:State.IsUpdatingUI = $false
-        }
+        # Reset the timer on every keystroke/change. It only fires when the user stops for 250ms.
+        $script:State.PreviewTimer.Stop()
+        $script:State.PreviewTimer.Start()
     }
 
     # ==============================================================================
@@ -1725,8 +1758,18 @@ try {
     $V_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { Update-FfmpegPreview })
 
     $MainTabs.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] {
-            if ($_.OriginalSource -eq $MainTabs) { Update-AllPreviews }
-        })
+        if ($_.OriginalSource -eq $MainTabs) { 
+            Update-AllPreviews 
+            
+            # Print browser detection log only when Download tab (Index 4) is selected for the first time
+            if ($MainTabs.SelectedIndex -eq 4 -and -not $script:State.BrowserLogged) {
+                $browserName = Get-CbVal $Y_CookieBrowser
+                $LogBox.AppendText("`r`n[INFO] Auto-detected default browser for cookies: $browserName`r`n")
+                if ($CbAutoScrollLog.IsChecked) { $LogBox.ScrollToEnd() }
+                $script:State.BrowserLogged = $true
+            }
+        }
+    })
 
     # Map settings changes to preview updates for the Audio Tab
     $A_CheckCustomParams.Add_Checked({ $A_CustomParamsPanel.Visibility = "Visible"; Update-AudioFfmpegPreview })
@@ -1814,7 +1857,7 @@ try {
     $Y_Type.SelectedIndex = -1
     $Y_Type.SelectedIndex = 0
 
-    # --- Bulletproof Auto-Detect Default Browser ---
+# --- Bulletproof Auto-Detect Default Browser ---
     try {
         $tempFile = Join-Path $env:TEMP "mcp_browser_detect.html"
         "<html></html>" | Out-File -FilePath $tempFile -Encoding utf8 -Force
@@ -1833,10 +1876,12 @@ try {
         elseif ($realPath -match "brave") { $Y_CookieBrowser.SelectedIndex = 4 }
         else { $Y_CookieBrowser.SelectedIndex = 0 } # Fallback to Edge
         
-        $LogBox.AppendText("[INFO] Auto-detected default browser for cookies: $($Y_CookieBrowser.Text)`r`n")
+        # Note: Logging removed from here to prevent it from showing at startup
     } catch {
         $Y_CookieBrowser.SelectedIndex = 0
     }
+    $script:State | Add-Member -MemberType NoteProperty -Name "BrowserLogged" -Value $false
+    
     #default to using cookies from browser with auto-detection, but allow user to uncheck if they want
     #$Y_CheckCookie.IsChecked = $true
     $Y_CheckCookie.IsChecked = $false
@@ -2241,7 +2286,10 @@ try {
                         }
                     }
                 }
-                catch {}
+                catch {
+                    Write-CrashLog "Could not read directory $pStr during drag-and-drop: $($_.Exception.Message)"
+                    $LogBox.AppendText("`r`n[WARNING] Skipped restricted or unreadable folder: $pStr`r`n")
+                }
             } 
             elseif ([System.IO.File]::Exists($pStr)) { 
                 if ($pStr -match $ExtRegex -and -not $existingItems.ContainsKey($pStr)) { 
@@ -2764,19 +2812,20 @@ try {
             foreach ($arg in $job.Args) { $rawArgs += $arg.ToString().Trim() }
 
             $argString = ($rawArgs | ForEach-Object {
-                    $str = [string]$_
-                    if ([string]::IsNullOrWhiteSpace($str)) { return '""' }
+                $str = [string]$_
+                if ([string]::IsNullOrWhiteSpace($str)) { return '""' }
                 
-                    # If it's already quoted, leave it alone
-                    if ($str -match '^".*"$' -or $str -match "^'.*'$") { return $str }
+                # If already cleanly quoted, leave it
+                if ($str -match '^".*"$') { return $str }
 
-                    # If it contains spaces or special characters, escape internal quotes and wrap in double quotes
-                    if ($str -match '[\s&^<>|%!=:]') {
-                        # Escape existing double quotes and wrap the whole thing in double quotes for CMD
-                        return "`"$($str -replace '"', '\"')`""
-                    }
-                    return $str
-                }) -join " "
+                # Wrap in quotes if it contains spaces or CMD reserved characters
+                if ($str -match '[\s&^<>|%!=:]') {
+                    # Safely escape internal quotes AND protect trailing backslashes
+                    $str = $str -replace '(\\+)"', '$1$1\"' -replace '(\\+)$', '$1$1' -replace '"', '\"'
+                    return "`"$str`""
+                }
+                return $str
+            }) -join " "
 
             $toolPath = if ($job.IsYtDlp) { $script:State.ytdlp } 
             elseif ($job.CustomTool) { $job.CustomTool } 
@@ -2823,13 +2872,20 @@ try {
         }
         
         catch { 
-            Write-CrashLog "Failed processing job $($script:State.CurrentJobIndex + 1): $($_.Exception.Message)`r`n$($_.ScriptStackTrace)"
-            $BtnCancel.IsEnabled = $false
-            $BtnSkip.IsEnabled = $false
-            $BtnRun.IsEnabled = $true
-            $BtnUpdate.IsEnabled = $true
-            $script:State.CurrentJobIndex++
-            [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ Process-NextJob })
+            $errMsg = "Failed processing job $($script:State.CurrentJobIndex + 1): $($_.Exception.Message)"
+            Write-CrashLog "$errMsg`r`n$($_.ScriptStackTrace)"
+            
+            # Log directly to the UI so the user knows what happened without halting the queue
+            $window.Dispatcher.InvokeAsync([Action] {
+                $LogBox.AppendText("`r`n[CRITICAL ERROR] $errMsg`r`nSkipping to next job...`r`n")
+                if ($CbAutoScrollLog.IsChecked) { $LogBox.ScrollToEnd() }
+                
+                # Clean up process if it hung
+                if ($script:State.p) { try { $script:State.p.Dispose() } catch {}; $script:State.p = $null }
+
+                $script:State.CurrentJobIndex++
+                Process-NextJob
+            }, [System.Windows.Threading.DispatcherPriority]::Background)
         }
     }
 
@@ -3983,8 +4039,20 @@ try {
             }
         })
 
-    # Ensure application cleanly terminates all child CMD wrapper processes on standard cross exit
-    $window.Add_Closing({ Kill-ProcessTree $script:State.p; Save-Queue })
+    # Ensure application cleanly terminates child processes, saves queue, and wipes temp files
+    $window.Add_Closing({ 
+        Kill-ProcessTree $script:State.p
+        Save-Queue 
+        
+        # Clean up temporary logs and thumbnails to prevent disk bloat
+        @("mcp_live.log", "mcp_live_err.log", "yt_info.json", "yt_info_err.log", "whisper_update.log") | ForEach-Object {
+            $f = Join-Path $env:TEMP $_
+            if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+        }
+        
+        # Sweep all dynamically generated preview thumbnails
+        Get-ChildItem -Path $env:TEMP -Filter "thumb_*.jpg" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    })
     [void]$window.ShowDialog()
 }
 catch {
