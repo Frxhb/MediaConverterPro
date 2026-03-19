@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install PS2EXE
-        shell: pwsh
+        shell: powershell
         run: Install-Module -Name ps2exe -Force -Scope CurrentUser
 
       - name: Build EXE
