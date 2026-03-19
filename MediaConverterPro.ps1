@@ -573,13 +573,14 @@ try {
                             
                             <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Filters &amp; Advanced"/></TabItem.Header>
-                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
-                                    <StackPanel>
+                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20" Focusable="True">
+                                    <StackPanel Focusable="True">
                                         <Grid>
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0" Margin="10">
                                                 <TextBlock Text="Trim (Format: 00:00:00)" FontSize="13" Foreground="#EF4444" Margin="0,0,0,5"/>
                                                 <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBox x:Name="A_TrimStart" Margin="0,0,5,0" Text="00:00:00"/><TextBox x:Name="A_TrimEnd" Grid.Column="1" Text="00:00:00"/></Grid>
+                                                <Grid Margin="0,5,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Slider x:Name="A_SliderTrimStart" Minimum="0" Maximum="0" Value="0" Margin="0,0,5,0" IsEnabled="False" ToolTip="Drag to set Start Time"/><Slider x:Name="A_SliderTrimEnd" Minimum="0" Maximum="0" Value="0" Grid.Column="1" IsEnabled="False" ToolTip="Drag to set End Time"/></Grid>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Margin="10">
                                                 <CheckBox x:Name="A_CheckNorm" Content="Normalize Audio (R128)" Margin="0,5,0,10" FontWeight="Bold"/>
@@ -703,10 +704,11 @@ try {
                                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="V_SubPath" IsReadOnly="True"/><Button x:Name="V_BtnSub" Grid.Column="1" Content="..." Width="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="5,0,0,0"/></Grid>
                                         </StackPanel>
                                         <StackPanel Grid.Row="3" Grid.Column="1" Margin="10">
-                                            <TextBlock Text="Trim (Format: 00:00:00)" FontSize="13" Foreground="#EF4444" Margin="0,0,0,5"/>
-                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBox x:Name="V_TrimStart" Margin="0,0,5,0" Text="00:00:00"/><TextBox x:Name="V_TrimEnd" Grid.Column="1" Text="00:00:00"/></Grid>
-                                            <Button x:Name="V_BtnGenPreview" Content="Generate Visual Timeline" Margin="0,8,0,0" Height="28" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
-                                            <ScrollViewer x:Name="V_PreviewScroll" Height="70" Visibility="Collapsed" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                                        <TextBlock Text="Trim (Format: 00:00:00)" FontSize="13" Foreground="#EF4444" Margin="0,0,0,5"/>
+                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBox x:Name="V_TrimStart" Margin="0,0,5,0" Text="00:00:00"/><TextBox x:Name="V_TrimEnd" Grid.Column="1" Text="00:00:00"/></Grid>
+                                        <Grid Margin="0,5,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Slider x:Name="V_SliderTrimStart" Minimum="0" Maximum="0" Value="0" Margin="0,0,5,0" IsEnabled="False" ToolTip="Drag to set Start Time"/><Slider x:Name="V_SliderTrimEnd" Minimum="0" Maximum="0" Value="0" Grid.Column="1" IsEnabled="False" ToolTip="Drag to set End Time"/></Grid>
+                                        <Button x:Name="V_BtnGenPreview" Content="Generate Visual Timeline" Margin="0,8,0,0" Height="28" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                            <ScrollViewer x:Name="V_PreviewScroll" Height="120" Visibility="Collapsed" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" Margin="0,8,0,0">
                                                 <StackPanel x:Name="V_PreviewStack" Orientation="Horizontal"/>
                                             </ScrollViewer>
                                         </StackPanel>
@@ -1162,8 +1164,8 @@ try {
         "TaskbarProgress",
         "MainTabs", "BtnRun", "BtnShow", "BtnSettings", "BtnUpdate", "BtnCancel", "BtnSkip", "BtnReset", "StatusText", "TxtETA", "PBar", "LogBox", "CbAutoScrollLog", "TxtSubtitle",
         "TabAudio", "TabVideo", "TabImage", "TabMuxing", "TabDownload", "ExpLog",
-        "A_InList", "A_OutDir", "A_BtnAdd", "A_BtnClear", "A_BtnInfo", "A_BtnOut", "A_CFormat", "A_CQual", "A_CChan", "A_CMeta", "A_CheckNorm", "A_TrimStart", "A_TrimEnd", "A_CheckExtract", "A_CtxRemove", "A_CtxClear", "A_CheckCustomParams", "A_CustomParamsPanel", "A_ParamsPreview", "A_CustomParams",
-        "V_InList", "V_OutDir", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
+        "A_InList", "A_OutDir", "A_BtnAdd", "A_BtnClear", "A_BtnInfo", "A_BtnOut", "A_CFormat", "A_CQual", "A_CChan", "A_CMeta", "A_CheckNorm", "A_TrimStart", "A_TrimEnd", "A_SliderTrimStart", "A_SliderTrimEnd", "A_CheckExtract", "A_CtxRemove", "A_CtxClear", "A_CheckCustomParams", "A_CustomParamsPanel", "A_ParamsPreview", "A_CustomParams",
+        "V_InList", "V_OutDir", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderTrimStart", "V_SliderTrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
         "I_InList", "I_OutDir", "I_BtnAdd", "I_BtnClear", "I_BtnInfo", "I_BtnOut", "I_CFormat", "I_CQual", "I_CRes", "I_CheckMeta", "I_CtxRemove", "I_CtxClear",
         "M_InVideo", "M_InAudio", "M_OutFile", "M_BtnVid", "M_BtnAud", "M_BtnOut",
         "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
@@ -1312,6 +1314,25 @@ try {
             $window.Dispatcher.InvokeAsync([Action] {
         
                     Check-Missing-Tools 
+
+                    # Dynamic Hardware Acceleration Detection
+                    if ($script:State.ffmpegFound) {
+                        try {
+                            $hwOut = & $script:State.ffmpeg -hwaccels 2>&1 | Out-String
+                            if ($hwOut -notmatch "cuda|nvenc") { 
+                                ($V_CHWAccel.Items[1] -as [System.Windows.Controls.ComboBoxItem]).IsEnabled = $false
+                                ($V_CHWAccel.Items[1] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = "NVIDIA GPU support not detected."
+                            }
+                            if ($hwOut -notmatch "amf") { 
+                                ($V_CHWAccel.Items[2] -as [System.Windows.Controls.ComboBoxItem]).IsEnabled = $false
+                                ($V_CHWAccel.Items[2] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = "AMD GPU support not detected."
+                            }
+                            if ($hwOut -notmatch "qsv") { 
+                                ($V_CHWAccel.Items[3] -as [System.Windows.Controls.ComboBoxItem]).IsEnabled = $false
+                                ($V_CHWAccel.Items[3] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = "Intel GPU support not detected."
+                            }
+                        } catch {}
+                    } 
 
                     # 1. Background Pre-fetch for yt-dlp supported sites
                     if ($null -eq $script:State.SupportedSitesCache) {
@@ -2380,9 +2401,11 @@ try {
     $I_BtnClear.Add_Click({ $I_InList.Items.Clear() })
 
     # Helper function for assigning an Output Directory
-    function Pick-OutDir([System.Windows.Controls.TextBox]$Box) { $fb = New-Object System.Windows.Forms.FolderBrowserDialog; if ($fb.ShowDialog() -eq "OK") { $Box.Text = $fb.SelectedPath; Update-AllPreviews } }
-    $A_BtnOut.Add_Click({ Pick-OutDir $A_OutDir }); $V_BtnOut.Add_Click({ Pick-OutDir $V_OutDir }); $I_BtnOut.Add_Click({ Pick-OutDir $I_OutDir }); $Y_BtnOut.Add_Click({ Pick-OutDir $Y_OutDir })
-    $S_BtnUpscaleOut.Add_Click({ Pick-OutDir $S_UpscaleOutDir })
+    function Pick-OutDir([System.Windows.Controls.TextBox]$Box) {
+        $fb = New-Object System.Windows.Forms.FolderBrowserDialog; if ($fb.ShowDialog() -eq "OK") { $Box.Text = $fb.SelectedPath; Update-AllPreviews } }
+        $A_BtnOut.Add_Click({ Pick-OutDir $A_OutDir }); $V_BtnOut.Add_Click({ Pick-OutDir $V_OutDir }); $I_BtnOut.Add_Click({ Pick-OutDir $I_OutDir }); $Y_BtnOut.Add_Click({ Pick-OutDir $Y_OutDir })
+        $S_BtnUpscaleOut.Add_Click({ Pick-OutDir $S_UpscaleOutDir 
+    })
 
     $M_BtnVid.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Video|*.mp4;*.mkv;*.avi;*.webm|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $M_InVideo.Text = $fd.FileName } })
     $M_BtnAud.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.aac|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $M_InAudio.Text = $fd.FileName } })
@@ -2400,73 +2423,109 @@ try {
 
     $V_BtnSub.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Subtitles|*.srt|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $V_SubPath.Text = $fd.FileName } })
     
-    # Logic to parse video and dynamically create a 6-frame preview thumbnail timeline
+# REWRITTEN: Fast synchronous timeline generation with UI pumping (No Background Threads!)
     $V_BtnGenPreview.Add_Click({
-            $file = $V_InList.SelectedItem
-            if (-not $file -and $V_InList.Items.Count -gt 0) { $file = $V_InList.Items[0] }
-            if (-not $file) { [void][System.Windows.MessageBox]::Show("Select a video in the queue first.", "Missing Input", 0, 48); return }
+        $file = $V_InList.SelectedItem
+        if (-not $file -and $V_InList.Items.Count -gt 0) { $file = $V_InList.Items[0] }
+        if (-not $file) { [void][System.Windows.MessageBox]::Show("Select a video in the queue first.", "Missing Input", 0, 48); return }
 
-            $V_PreviewStack.Children.Clear()
-            $V_PreviewScroll.Visibility = "Visible"
-            $V_BtnGenPreview.IsEnabled = $false
-            $V_BtnGenPreview.Content = "Generating..."
-            $window.Cursor = [System.Windows.Input.Cursors]::Wait
+        $filePath = $file.ToString()
+        $startText = $V_TrimStart.Text
+        $endText = $V_TrimEnd.Text
 
-            $bgWorker = New-Object System.ComponentModel.BackgroundWorker
-            $bgWorker.Add_DoWork({
-                    $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
-                    $pinfoDur.FileName = $script:State.ffprobe
-                    $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$file`""
-                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
-                    $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-                    $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
-                    $pDur.WaitForExit()
+        $V_PreviewStack.Children.Clear()
+        $V_PreviewScroll.Visibility = "Visible"
+        $V_BtnGenPreview.IsEnabled = $false
+        $V_BtnGenPreview.Content = "Generating..."
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
 
-                    $totalSecs = 0
-                    if (-not [double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs) -or $totalSecs -le 0) {
-                        return
-                    }
+        # Pump the UI so the user immediately sees the "Generating..." text
+        $window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
 
-                    for ($i = 1; $i -le 6; $i++) {
-                        $percent = $i * 15
-                        $targetSec = $totalSecs * ($percent / 100.0)
-                        $ts = [TimeSpan]::FromSeconds($targetSec)
-                        $timeStr = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+        try {
+            $startSecs = 0
+            $endSecs = 0
 
-                        $outThumb = Join-Path $env:TEMP "thumb_$i.jpg"
-                        $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-                        $pinfo.FileName = $script:State.ffmpeg
-                        $pinfo.Arguments = "-y -hide_banner -ss $timeStr -i `"$file`" -frames:v 1 -q:v 2 -vf scale=160:-1 `"$outThumb`""
-                        $pinfo.UseShellExecute = $false; $pinfo.CreateNoWindow = $true
-                        $p = [System.Diagnostics.Process]::Start($pinfo)
-                        $p.WaitForExit()
+            # Parse Start Time safely
+            if ($startText -match "(\d{2}):(\d{2}):(\d{2})") {
+                $startSecs = ([int]$matches[1] * 3600) + ([int]$matches[2] * 60) + [int]$matches[3]
+            }
+            # Parse End Time safely
+            if ($endText -match "(\d{2}):(\d{2}):(\d{2})") {
+                $endSecs = ([int]$matches[1] * 3600) + ([int]$matches[2] * 60) + [int]$matches[3]
+            }
 
-                        if (Test-Path $outThumb) {
-                            $window.Dispatcher.Invoke([Action] {
-                                    $img = New-Object System.Windows.Controls.Image
-                                    $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
-                                    $bmp.BeginInit()
-                                    $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-                                    $bmp.CreateOptions = [System.Windows.Media.Imaging.BitmapCreateOptions]::IgnoreImageCache
-                                    $bmp.UriSource = New-Object System.Uri($outThumb)
-                                    $bmp.EndInit()
-                                    $bmp.Freeze()
-                                    $img.Source = $bmp
-                                    $img.Height = 60
-                                    $img.Margin = New-Object System.Windows.Thickness(0, 0, 5, 0)
-                                    $img.ToolTip = "Position: $percent% ($timeStr)"
-                                    [void]$V_PreviewStack.Children.Add($img)
-                                })
-                        }
-                    }
-                })
-            $bgWorker.Add_RunWorkerCompleted({
-                    $V_BtnGenPreview.IsEnabled = $true
-                    $V_BtnGenPreview.Content = "Generate Visual Timeline"
-                    $window.Cursor = [System.Windows.Input.Cursors]::Arrow
-                })
-            $bgWorker.RunWorkerAsync()
-        })
+            # If end time is missing or smaller than start, fetch real duration
+            if ($endSecs -le $startSecs) {
+                $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+                $pinfoDur.FileName = $script:State.ffprobe
+                $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$filePath`""
+                $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+                $pDur.WaitForExit()
+
+                $totalSecs = 0
+                if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs)) {
+                    $endSecs = $totalSecs
+                }
+            }
+
+            $duration = $endSecs - $startSecs
+            if ($duration -le 0) { throw "Invalid duration calculated." }
+
+            # Loop through and grab 10 frames
+            for ($i = 1; $i -le 10; $i++) {
+                # Calculate percentage (approx 9%, 18%, 27%... up to 90%)
+                $percent = $i * 9 
+                $targetSec = $startSecs + ($duration * ($percent / 100.0))
+                
+                # Format to HH:mm:ss
+                $ts = [TimeSpan]::FromSeconds($targetSec)
+                $timeStr = "{0:D2}:{1:D2}:{2:D2}" -f [int][math]::Floor($ts.TotalHours), $ts.Minutes, $ts.Seconds
+
+                $outThumb = Join-Path $env:TEMP "thumb_preview_$i.jpg"
+                if (Test-Path $outThumb) { Remove-Item $outThumb -Force -ErrorAction SilentlyContinue }
+
+                # Fast seeking extraction - Increased scale to 200px width for better quality on bigger display
+                $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+                $pinfo.FileName = $script:State.ffmpeg
+                $pinfo.Arguments = "-y -hide_banner -ss $timeStr -i `"$filePath`" -frames:v 1 -q:v 2 -vf scale=200:-1 `"$outThumb`""
+                $pinfo.UseShellExecute = $false; $pinfo.CreateNoWindow = $true
+                $p = [System.Diagnostics.Process]::Start($pinfo)
+                $p.WaitForExit()
+
+                if (Test-Path $outThumb) {
+                    $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
+                    $bmp.BeginInit()
+                    $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+                    $bmp.CreateOptions = [System.Windows.Media.Imaging.BitmapCreateOptions]::IgnoreImageCache
+                    $bmp.UriSource = New-Object System.Uri($outThumb)
+                    $bmp.EndInit()
+                    $bmp.Freeze()
+                    
+                    $img = New-Object System.Windows.Controls.Image
+                    $img.Source = $bmp
+                    $img.Height = 100 # Increased from 60 to 100
+                    $img.Margin = New-Object System.Windows.Thickness(0, 0, 8, 0)
+                    $img.ToolTip = "Position: $percent% ($timeStr)"
+                    
+                    [void]$V_PreviewStack.Children.Add($img)
+                    
+                    # Force UI to draw the new larger image immediately
+                    $window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
+                }
+            }
+        }
+        catch {
+            [void][System.Windows.MessageBox]::Show("Timeline generation failed: $($_.Exception.Message)", "Error", 0, 16)
+        }
+        finally {
+            $V_BtnGenPreview.IsEnabled = $true
+            $V_BtnGenPreview.Content = "Generate Visual Timeline"
+            $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+        }
+    })
 
     $V_SliderCRF.Add_ValueChanged({ 
             $val = [math]::Round($V_SliderCRF.Value)
@@ -2544,7 +2603,74 @@ try {
     $A_TrimEnd.Add_GotFocus({ if ($A_TrimEnd.Text -eq "00:00:00") { $A_TrimEnd.Text = "" } }); $A_TrimEnd.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($A_TrimEnd.Text)) { $A_TrimEnd.Text = "00:00:00" } })
     $V_TrimStart.Add_GotFocus({ if ($V_TrimStart.Text -eq "00:00:00") { $V_TrimStart.Text = "" } }); $V_TrimStart.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($V_TrimStart.Text)) { $V_TrimStart.Text = "00:00:00" } })
     $V_TrimEnd.Add_GotFocus({ if ($V_TrimEnd.Text -eq "00:00:00") { $V_TrimEnd.Text = "" } }); $V_TrimEnd.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($V_TrimEnd.Text)) { $V_TrimEnd.Text = "00:00:00" } })
-    
+
+    # Interactive Audio Trimmer Slider Logic
+    $A_SliderTrimStart.Add_ValueChanged({
+        $ts = [TimeSpan]::FromSeconds($A_SliderTrimStart.Value)
+        $A_TrimStart.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+        if ($A_SliderTrimStart.Value -gt $A_SliderTrimEnd.Value -and $A_SliderTrimEnd.Value -gt 0) { $A_SliderTrimEnd.Value = $A_SliderTrimStart.Value }
+        Update-AllPreviews
+    })
+    $A_SliderTrimEnd.Add_ValueChanged({
+        $ts = [TimeSpan]::FromSeconds($A_SliderTrimEnd.Value)
+        $A_TrimEnd.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+        if ($A_SliderTrimEnd.Value -lt $A_SliderTrimStart.Value) { $A_SliderTrimStart.Value = $A_SliderTrimEnd.Value }
+        Update-AllPreviews
+    })
+
+    # Update Audio Sliders when a new audio file is selected
+    $A_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { 
+        if ($null -ne $A_InList.SelectedItem -and $script:State.ffprobeFound) {
+            $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+            $pinfoDur.FileName = $script:State.ffprobe
+            $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($A_InList.SelectedItem)`""
+            $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+            $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+            $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+            $pDur.WaitForExit()
+            
+            $totalSecs = 0
+            if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs) -and $totalSecs -gt 0) {
+                $A_SliderTrimStart.IsEnabled = $true; $A_SliderTrimEnd.IsEnabled = $true
+                $A_SliderTrimStart.Maximum = $totalSecs; $A_SliderTrimEnd.Maximum = $totalSecs
+                $A_SliderTrimStart.Value = 0; $A_SliderTrimEnd.Value = $totalSecs
+            }
+        } else {
+            $A_SliderTrimStart.IsEnabled = $false; $A_SliderTrimEnd.IsEnabled = $false
+        }
+        Update-AudioFfmpegPreview 
+    })
+
+    # Interactive Video Trimmer Slider Logic
+    $V_SliderTrimStart.Add_ValueChanged({
+        $ts = [TimeSpan]::FromSeconds($V_SliderTrimEnd.Value)
+        $V_TrimEnd.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+        if ($V_SliderTrimEnd.Value -lt $V_SliderTrimStart.Value) { $V_SliderTrimStart.Value = $V_SliderTrimEnd.Value }
+        Update-AllPreviews
+    })
+
+    # Update Sliders when a new video is selected
+    $V_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { 
+        if ($null -ne $V_InList.SelectedItem -and $script:State.ffprobeFound) {
+            $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+            $pinfoDur.FileName = $script:State.ffprobe
+            $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($V_InList.SelectedItem)`""
+            $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+            $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+            $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+            $pDur.WaitForExit()
+            
+            $totalSecs = 0
+            if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs) -and $totalSecs -gt 0) {
+                $V_SliderTrimStart.IsEnabled = $true; $V_SliderTrimEnd.IsEnabled = $true
+                $V_SliderTrimStart.Maximum = $totalSecs; $V_SliderTrimEnd.Maximum = $totalSecs
+                $V_SliderTrimStart.Value = 0; $V_SliderTrimEnd.Value = $totalSecs
+            }
+        } else {
+            $V_SliderTrimStart.IsEnabled = $false; $V_SliderTrimEnd.IsEnabled = $false
+        }
+        Update-FfmpegPreview 
+    })    
     $Y_Link.Add_GotKeyboardFocus({ if ($Y_Link.Text -eq "https://") { $Y_Link.Text = "" } })
     $Y_Link.Add_LostKeyboardFocus({ if ([string]::IsNullOrWhiteSpace($Y_Link.Text)) { $Y_Link.Text = "https://" } })
 
