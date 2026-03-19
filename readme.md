@@ -86,7 +86,7 @@ You can run Media Converter Pro in two ways:
 
 ### Option 2: Running the Executable (.exe)
 If you have a compiled version:
-1. Simply double-click `MediaConverterPro.exe`. (You can retrieve it from the [releases](https://github.com/Frxhb/MediaConverterPro/releases/latest)
+1. Simply double-click `MediaConverterPro.exe`. You can retrieve the newest .exe from the [releases](https://github.com/Frxhb/MediaConverterPro/releases/latest) page.
 2. **⚠️ Antivirus Note:** Some antivirus engines (like Windows Defender) may falsely flag compiled PowerShell scripts as a "Positive" threat. This is a common issue with `PS2EXE` compilers. If this happens, you can either add an exclusion or stick to the `.ps1` script version.
 
 ---
