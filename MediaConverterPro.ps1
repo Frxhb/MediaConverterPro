@@ -113,6 +113,11 @@ try {
     # Load required .NET assemblies for WPF and Windows Forms
     Add-Type -AssemblyName PresentationFramework, System.Windows.Forms, System.Drawing, Microsoft.VisualBasic
 
+    # Setup System Tray Notification Icon
+    $script:TrayIcon = New-Object System.Windows.Forms.NotifyIcon
+    $script:TrayIcon.Icon = [System.Drawing.SystemIcons]::Information
+    $script:TrayIcon.Visible = $true
+
     # Global state object to track the active job queue, tool paths, and live log status
     $script:State = @{
         ffmpeg              = "ffmpeg.exe"
@@ -155,7 +160,8 @@ try {
                 if ((Get-Command "node.exe" -ErrorAction SilentlyContinue) -or (Get-Command "deno.exe" -ErrorAction SilentlyContinue)) { $script:State.jsRuntimeFound = $true }
                 
                 if ($script:State.ffmpegFound -and $script:State.ytdlpFound) { return } # Skip the heavy loop if everything essential is found!
-            } catch {}
+            }
+            catch {}
         }
 
         # Ensure environment path is fresh for the loop
@@ -841,12 +847,25 @@ try {
                     <StackPanel>
                         <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,15">
                             <StackPanel>
-                                <TextBlock Text="Web Video / Audio Link (YouTube, SoundCloud, etc.)" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
-                                <Grid Margin="0,0,0,15">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
-                                    <TextBox x:Name="Y_Link" Text="https://" Height="45"/>
-                                    <Button x:Name="Y_BtnPreview" Grid.Column="1" Content="Fetch Video Info" Margin="10,0,0,0" Height="45" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
-                                </Grid>
+                                <TextBlock Text="Web Video / Audio Link (YouTube, SoundCloud, Arte, etc.)" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+                                <TabControl x:Name="Y_InputTabs" Background="Transparent" BorderThickness="0" Margin="0,0,0,10" Padding="0">
+                                    <TabItem Style="{StaticResource SubTabStyle}">
+                                        <TabItem.Header><TextBlock Text="Single Link"/></TabItem.Header>
+                                        <Grid Margin="0,10,0,5">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
+                                            <TextBox x:Name="Y_Link" Text="https://" Height="45"/>
+                                            <Button x:Name="Y_BtnPreview" Grid.Column="1" Content="Fetch Video Info" Margin="10,0,0,0" Height="45" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                        </Grid>
+                                    </TabItem>
+                                    <TabItem Style="{StaticResource SubTabStyle}">
+                                        <TabItem.Header><TextBlock Text="Batch File (.txt)"/></TabItem.Header>
+                                        <Grid Margin="0,10,0,5">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
+                                            <TextBox x:Name="Y_BatchFile" ToolTip="Select a .txt file containing one URL per line" IsReadOnly="True" Text="Select batch text file..." Height="45" Cursor="Arrow"/>
+                                            <Button x:Name="Y_BtnBatchBrowse" Grid.Column="1" Content="Browse .txt" Margin="10,0,0,0" Height="45" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                        </Grid>
+                                    </TabItem>
+                                </TabControl>
                                 
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
@@ -1168,7 +1187,7 @@ try {
         "V_InList", "V_OutDir", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderTrimStart", "V_SliderTrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
         "I_InList", "I_OutDir", "I_BtnAdd", "I_BtnClear", "I_BtnInfo", "I_BtnOut", "I_CFormat", "I_CQual", "I_CRes", "I_CheckMeta", "I_CtxRemove", "I_CtxClear",
         "M_InVideo", "M_InAudio", "M_OutFile", "M_BtnVid", "M_BtnAud", "M_BtnOut",
-        "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
+        "Y_InputTabs", "Y_BatchFile", "Y_BtnBatchBrowse", "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
         "TabSpecial", "SpecialSubTabs", "S_VisAudio", "S_VisImg", "S_VisStyle", "S_BtnVisAud", "S_BtnVisImg", "S_StabIn", "S_BtnStabIn", "S_StabLevel",
         "S_ScribeIn", "S_BtnScribeIn", "S_ScribeLang", "S_CheckBurn", "S_ScribeFormat", "S_ScribeModel", "S_ScribeTask",
         "TabSpecialUpscale", "S_UpscaleIn", "S_BtnUpscaleIn", "S_UpscaleModel", "S_UpscaleScale", "S_UpscaleOutDir", "S_BtnUpscaleOut"
@@ -1331,7 +1350,8 @@ try {
                                 ($V_CHWAccel.Items[3] -as [System.Windows.Controls.ComboBoxItem]).IsEnabled = $false
                                 ($V_CHWAccel.Items[3] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = "Intel GPU support not detected."
                             }
-                        } catch {}
+                        }
+                        catch {}
                     } 
 
                     # 1. Background Pre-fetch for yt-dlp supported sites
@@ -1361,7 +1381,7 @@ try {
                     }
 
                     # 3. Safe UI Initialization for all Drag & Drop TextBoxes
-                    foreach ($tb in @($M_InVideo, $M_InAudio, $S_VisAudio, $S_VisImg, $S_StabIn, $S_ScribeIn, $S_UpscaleIn)) {
+                    foreach ($tb in @($M_InVideo, $M_InAudio, $S_VisAudio, $S_VisImg, $S_StabIn, $S_ScribeIn, $S_UpscaleIn, $Y_BatchFile)) {
                         if ($null -ne $tb) {
                             $tb.Add_PreviewDragOver($DragEnterHandler)
                             $tb.Add_DragLeave($DragLeaveHandler)
@@ -1454,8 +1474,8 @@ try {
     # ==============================================================================
 
     # Function to build arguments for yt-dlp based on UI selections
-    function Get-YtDlpArgs([bool]$IsPreview, [bool]$ExcludeCustom, [string]$PlaylistFlag) {
-        $link = $Y_Link.Text.Trim()
+    function Get-YtDlpArgs([bool]$IsPreview, [bool]$ExcludeCustom, [string]$PlaylistFlag, [string]$TargetLink) {
+        $link = $TargetLink
         if ([string]::IsNullOrWhiteSpace($link) -or $link -eq "https://") { $link = "URL_HERE" }
 
         $outDir = $Y_OutDir.Text
@@ -1545,7 +1565,7 @@ try {
     function Update-YtDlpPreview {
         if (-not $Y_CheckCustomParams.IsChecked) { return }
         
-        $args = Get-YtDlpArgs -isPreview $true -ExcludeCustom $false -PlaylistFlag ""
+        $args = Get-YtDlpArgs -isPreview $true -ExcludeCustom $false -PlaylistFlag "" -TargetLink $Y_Link.Text.Trim()
         if ($null -eq $args) { return }
         
         $formattedArgs = foreach ($a in $args) {
@@ -1559,8 +1579,20 @@ try {
         $argList = [System.Collections.Generic.List[string]]::new()
         $argList.AddRange([string[]]@("-hide_banner", "-y"))
 
-        if ($V_TrimStart.Text -ne "00:00:00") { $argList.AddRange([string[]]@("-ss", $V_TrimStart.Text)) }
-        if ($V_TrimEnd.Text -ne "00:00:00") { $argList.AddRange([string[]]@("-to", $V_TrimEnd.Text)) }
+        # Safely parse and enforce that End Time is strictly greater than Start Time
+        $startStr = $V_TrimStart.Text; $endStr = $V_TrimEnd.Text
+        $startTs = [TimeSpan]::Zero; $endTs = [TimeSpan]::Zero
+        [TimeSpan]::TryParse($startStr, [ref]$startTs) | Out-Null
+        [TimeSpan]::TryParse($endStr, [ref]$endTs) | Out-Null
+
+        if ($endTs.TotalSeconds -gt 0 -and $startTs.TotalSeconds -ge $endTs.TotalSeconds) {
+            # Auto-swap times to prevent FFmpeg crash (-22 Invalid Argument)
+            $startStr = "{0:D2}:{1:D2}:{2:D2}" -f $endTs.Hours, $endTs.Minutes, $endTs.Seconds
+            $endStr = "{0:D2}:{1:D2}:{2:D2}" -f $startTs.Hours, $startTs.Minutes, $startTs.Seconds
+        }
+
+        if ($startStr -ne "00:00:00") { $argList.AddRange([string[]]@("-ss", $startStr)) }
+        if ($endStr -ne "00:00:00") { $argList.AddRange([string[]]@("-to", $endStr)) }
 
         $delaySec = 0
         $useDualInput = $false
@@ -1625,9 +1657,20 @@ try {
         $aCodecCb = (Get-CbVal $V_CAudio); $aCodec = "aac"
         if ($aCodecCb -match "Copy") { $aCodec = "copy" } elseif ($aCodecCb -match "AC3") { $aCodec = "ac3" }
 
-        $argList.AddRange([string[]]@("-c:v", $vCodec, "-c:a", $aCodec))
-        if ($vCodec -ne "copy" -and $vf.Count -gt 0) { $argList.AddRange([string[]]@("-vf", ($vf -join ","))) }
-        if ($aCodec -ne "copy" -and $af.Count -gt 0) { $argList.AddRange([string[]]@("-af", ($af -join ","))) }
+        # GIF Optimization: Force gif codec, drop audio, reduce framerate, and use RAM-safe palette generation
+        if ($outFile -match "(?i)\.gif$") {
+            $vCodec = "gif"
+            $gifFilter = if ($vf.Count -gt 0) { ($vf -join ",") + "," } else { "" }
+            # Force max 720p and 15fps to prevent Out Of Memory (-12) errors on large files
+            $gifFilter += "fps=15,scale='min(720,iw)':-2:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle"
+            
+            $argList.AddRange([string[]]@("-c:v", $vCodec, "-an", "-vf", $gifFilter)) 
+        }
+        else {
+            $argList.AddRange([string[]]@("-c:v", $vCodec, "-c:a", $aCodec))
+            if ($vCodec -ne "copy" -and $vf.Count -gt 0) { $argList.AddRange([string[]]@("-vf", ($vf -join ","))) }
+            if ($aCodec -ne "copy" -and $af.Count -gt 0) { $argList.AddRange([string[]]@("-af", ($af -join ","))) }
+        }
 
         # Audio Track mappings based on sync requirements
         if ($useDualInput) {
@@ -1703,8 +1746,18 @@ try {
         $argList = [System.Collections.Generic.List[string]]::new()
         $argList.AddRange([string[]]@("-hide_banner", "-y"))
         
-        if ($A_TrimStart.Text -ne "00:00:00") { $argList.AddRange([string[]]@("-ss", $A_TrimStart.Text)) }
-        if ($A_TrimEnd.Text -ne "00:00:00") { $argList.AddRange([string[]]@("-to", $A_TrimEnd.Text)) }
+        $startStr = $A_TrimStart.Text; $endStr = $A_TrimEnd.Text
+        $startTs = [TimeSpan]::Zero; $endTs = [TimeSpan]::Zero
+        [TimeSpan]::TryParse($startStr, [ref]$startTs) | Out-Null
+        [TimeSpan]::TryParse($endStr, [ref]$endTs) | Out-Null
+
+        if ($endTs.TotalSeconds -gt 0 -and $startTs.TotalSeconds -ge $endTs.TotalSeconds) {
+            $startStr = "{0:D2}:{1:D2}:{2:D2}" -f $endTs.Hours, $endTs.Minutes, $endTs.Seconds
+            $endStr = "{0:D2}:{1:D2}:{2:D2}" -f $startTs.Hours, $startTs.Minutes, $startTs.Seconds
+        }
+        
+        if ($startStr -ne "00:00:00") { $argList.AddRange([string[]]@("-ss", $startStr)) }
+        if ($endStr -ne "00:00:00") { $argList.AddRange([string[]]@("-to", $endStr)) }
         
         $argList.AddRange([string[]]@("-i", $inFile, "-vn"))
         $fmt = (Get-CbVal $A_CFormat).ToLower()
@@ -1757,11 +1810,11 @@ try {
     $script:State.PreviewTimer = New-Object System.Windows.Threading.DispatcherTimer
     $script:State.PreviewTimer.Interval = [TimeSpan]::FromMilliseconds(250)
     $script:State.PreviewTimer.Add_Tick({
-        $script:State.PreviewTimer.Stop()
-        Update-AudioFfmpegPreview
-        Update-FfmpegPreview
-        Update-YtDlpPreview
-    })
+            $script:State.PreviewTimer.Stop()
+            Update-AudioFfmpegPreview
+            Update-FfmpegPreview
+            Update-YtDlpPreview
+        })
 
     # Generic function to force an update to all active tool previews
     function Update-AllPreviews {
@@ -1779,18 +1832,18 @@ try {
     $V_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { Update-FfmpegPreview })
 
     $MainTabs.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] {
-        if ($_.OriginalSource -eq $MainTabs) { 
-            Update-AllPreviews 
+            if ($_.OriginalSource -eq $MainTabs) { 
+                Update-AllPreviews 
             
-            # Print browser detection log only when Download tab (Index 4) is selected for the first time
-            if ($MainTabs.SelectedIndex -eq 4 -and -not $script:State.BrowserLogged) {
-                $browserName = Get-CbVal $Y_CookieBrowser
-                $LogBox.AppendText("`r`n[INFO] Auto-detected default browser for cookies: $browserName`r`n")
-                if ($CbAutoScrollLog.IsChecked) { $LogBox.ScrollToEnd() }
-                $script:State.BrowserLogged = $true
+                # Print browser detection log only when Download tab (Index 4) is selected for the first time
+                if ($MainTabs.SelectedIndex -eq 4 -and -not $script:State.BrowserLogged) {
+                    $browserName = Get-CbVal $Y_CookieBrowser
+                    $LogBox.AppendText("`r`n[INFO] Auto-detected default browser for cookies: $browserName`r`n")
+                    if ($CbAutoScrollLog.IsChecked) { $LogBox.ScrollToEnd() }
+                    $script:State.BrowserLogged = $true
+                }
             }
-        }
-    })
+        })
 
     # Map settings changes to preview updates for the Audio Tab
     $A_CheckCustomParams.Add_Checked({ $A_CustomParamsPanel.Visibility = "Visible"; Update-AudioFfmpegPreview })
@@ -1878,7 +1931,7 @@ try {
     $Y_Type.SelectedIndex = -1
     $Y_Type.SelectedIndex = 0
 
-# --- Bulletproof Auto-Detect Default Browser ---
+    # --- Bulletproof Auto-Detect Default Browser ---
     try {
         $tempFile = Join-Path $env:TEMP "mcp_browser_detect.html"
         "<html></html>" | Out-File -FilePath $tempFile -Encoding utf8 -Force
@@ -1898,7 +1951,8 @@ try {
         else { $Y_CookieBrowser.SelectedIndex = 0 } # Fallback to Edge
         
         # Note: Logging removed from here to prevent it from showing at startup
-    } catch {
+    }
+    catch {
         $Y_CookieBrowser.SelectedIndex = 0
     }
     $script:State | Add-Member -MemberType NoteProperty -Name "BrowserLogged" -Value $false
@@ -1975,6 +2029,8 @@ try {
                         Add-Content -Path $UpdateLogFile -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message"
                     }
 
+                    # --- ADDED: Extra empty line so it doesn't glue to previous logs ---
+                    $LogBox.AppendText("`r`n") 
                     Write-UpdLog "[UPDATE] Starting dependency updates..."
             
                     # Helper function to force the UI to refresh visually before blocking it with Start-Process
@@ -2071,6 +2127,12 @@ try {
                     $TaskbarProgress.ProgressState = "None"
                     Write-UpdLog "[UPDATE] Dependency update process finished."
                     
+                    # --- ADDED: Windows System Tray Notification ---
+                    if ($script:TrayIcon) {
+                        $script:TrayIcon.ShowBalloonTip(3000, "Media Converter Pro", "Dependency update process finished.", [System.Windows.Forms.ToolTipIcon]::Info)
+                    }
+                    # -----------------------------------------------
+
                     $BtnRun.IsEnabled = $true
                     $BtnUpdate.IsEnabled = $true
                     Find-Tools 
@@ -2327,30 +2389,46 @@ try {
     $DragEnterHandler = [System.Windows.DragEventHandler] { $_.Effects = [System.Windows.DragDropEffects]::Copy; $_.Handled = $true; $_.Source.Background = $window.Resources["DragBrush"] }
     $DragLeaveHandler = [System.Windows.DragEventHandler] { $_.Source.Background = $window.Resources["InputBgBrush"] }
     
-    $A_InList.Add_PreviewDragOver($DragEnterHandler); $A_InList.Add_DragLeave($DragLeaveHandler)
-    $A_InList.Add_Drop([System.Windows.DragEventHandler] { 
-            $_.Source.Background = $window.Resources["InputBgBrush"]
-            if ($_.Data.GetDataPresent([System.Windows.DataFormats]::FileDrop)) { 
-                $regex = if ($A_CheckExtract.IsChecked) { "\.(mp3|wav|m4a|flac|ogg|aac|mp4|mkv|avi|mov|webm)$" } else { "\.(mp3|wav|m4a|flac|ogg|aac)$" }
-                Add-ToList $A_InList ($_.Data.GetData([System.Windows.DataFormats]::FileDrop)) $regex
-            } 
-        })
+    function Setup-DragReorder ([System.Windows.Controls.ListBox]$lb, [string]$extRegex, [scriptblock]$checkExt) {
+        $lb.Add_PreviewMouseMove({
+                param($sender, $e)
+                if ($e.LeftButton -eq [System.Windows.Input.MouseButtonState]::Pressed -and $sender.SelectedItem) {
+                    [void][System.Windows.DragDrop]::DoDragDrop($sender, $sender.SelectedItem.ToString(), [System.Windows.DragDropEffects]::Move)
+                }
+            })
+        $lb.Add_PreviewDragOver($DragEnterHandler)
+        $lb.Add_DragLeave($DragLeaveHandler)
+        $lb.Add_Drop({
+                param($sender, $e)
+                $sender.Background = $window.Resources["InputBgBrush"]
+            
+                # 1. Handle external file drop from Windows Explorer
+                if ($e.Data.GetDataPresent([System.Windows.DataFormats]::FileDrop)) {
+                    $rx = if ($checkExt) { &$checkExt } else { $extRegex }
+                    Add-ToList $sender ($e.Data.GetData([System.Windows.DataFormats]::FileDrop)) $rx
+                }
+                # 2. Handle internal reordering drop
+                elseif ($e.Data.GetDataPresent([System.String])) {
+                    $droppedData = $e.Data.GetData([System.String])
+                    $targetItem = if ($e.OriginalSource.DataContext) { $e.OriginalSource.DataContext } else { $e.OriginalSource }
+                
+                    if ($targetItem -is [string] -and $targetItem -ne $droppedData) {
+                        $targetIndex = $sender.Items.IndexOf($targetItem)
+                        $sourceIndex = $sender.Items.IndexOf($droppedData)
+                        if ($sourceIndex -ge 0 -and $targetIndex -ge 0) {
+                            $sender.Items.RemoveAt($sourceIndex)
+                            $sender.Items.Insert($targetIndex, $droppedData)
+                            $sender.SelectedItem = $droppedData
+                            Update-AllPreviews
+                        }
+                    }
+                }
+            })
+    }
 
-    $V_InList.Add_PreviewDragOver($DragEnterHandler); $V_InList.Add_DragLeave($DragLeaveHandler)
-    $V_InList.Add_Drop([System.Windows.DragEventHandler] { 
-            $_.Source.Background = $window.Resources["InputBgBrush"]; 
-            if ($_.Data.GetDataPresent([System.Windows.DataFormats]::FileDrop)) { 
-                Add-ToList $V_InList ($_.Data.GetData([System.Windows.DataFormats]::FileDrop)) "\.(mp4|mkv|avi|mov|webm)$" 
-            } 
-        })
-
-    $I_InList.Add_PreviewDragOver($DragEnterHandler); $I_InList.Add_DragLeave($DragLeaveHandler)
-    $I_InList.Add_Drop([System.Windows.DragEventHandler] { 
-            $_.Source.Background = $window.Resources["InputBgBrush"]; 
-            if ($_.Data.GetDataPresent([System.Windows.DataFormats]::FileDrop)) { 
-                Add-ToList $I_InList ($_.Data.GetData([System.Windows.DataFormats]::FileDrop)) "\.(jpg|jpeg|png|webp|bmp|gif|heic)$" 
-            } 
-        })
+    Setup-DragReorder $A_InList "" { if ($A_CheckExtract.IsChecked) { "\.(mp3|wav|m4a|flac|ogg|aac|mp4|mkv|avi|mov|webm)$" } else { "\.(mp3|wav|m4a|flac|ogg|aac)$" } }
+    Setup-DragReorder $V_InList "\.(mp4|mkv|avi|mov|webm)$" $null
+    Setup-DragReorder $I_InList "\.(jpg|jpeg|png|webp|bmp|gif|heic)$" $null
 
     $TextBoxDropHandler = [System.Windows.DragEventHandler] {
         $_.Source.Background = $window.Resources["InputBgBrush"]
@@ -2402,10 +2480,11 @@ try {
 
     # Helper function for assigning an Output Directory
     function Pick-OutDir([System.Windows.Controls.TextBox]$Box) {
-        $fb = New-Object System.Windows.Forms.FolderBrowserDialog; if ($fb.ShowDialog() -eq "OK") { $Box.Text = $fb.SelectedPath; Update-AllPreviews } }
-        $A_BtnOut.Add_Click({ Pick-OutDir $A_OutDir }); $V_BtnOut.Add_Click({ Pick-OutDir $V_OutDir }); $I_BtnOut.Add_Click({ Pick-OutDir $I_OutDir }); $Y_BtnOut.Add_Click({ Pick-OutDir $Y_OutDir })
-        $S_BtnUpscaleOut.Add_Click({ Pick-OutDir $S_UpscaleOutDir 
-    })
+        $fb = New-Object System.Windows.Forms.FolderBrowserDialog; if ($fb.ShowDialog() -eq "OK") { $Box.Text = $fb.SelectedPath; Update-AllPreviews } 
+    }
+    $A_BtnOut.Add_Click({ Pick-OutDir $A_OutDir }); $V_BtnOut.Add_Click({ Pick-OutDir $V_OutDir }); $I_BtnOut.Add_Click({ Pick-OutDir $I_OutDir }); $Y_BtnOut.Add_Click({ Pick-OutDir $Y_OutDir })
+    $S_BtnUpscaleOut.Add_Click({ Pick-OutDir $S_UpscaleOutDir 
+        })
 
     $M_BtnVid.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Video|*.mp4;*.mkv;*.avi;*.webm|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $M_InVideo.Text = $fd.FileName } })
     $M_BtnAud.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.aac|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $M_InAudio.Text = $fd.FileName } })
@@ -2420,112 +2499,120 @@ try {
                 $Y_CheckCookie.IsChecked = $true
             }
         })
+    # --- ADDED: Batch File Browser Button ---
+    $Y_BtnBatchBrowse.Add_Click({
+        $fd = New-Object System.Windows.Forms.OpenFileDialog
+        $fd.Filter = "Text Files (*.txt)|*.txt|All Files|*.*"
+        $fd.Title = "Select Batch Download List"
+        if ($fd.ShowDialog() -eq "OK") { $Y_BatchFile.Text = $fd.FileName }
+    })
+    # ----------------------------------------
 
     $V_BtnSub.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Subtitles|*.srt|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $V_SubPath.Text = $fd.FileName } })
     
-# REWRITTEN: Fast synchronous timeline generation with UI pumping (No Background Threads!)
+    # REWRITTEN: Fast synchronous timeline generation with UI pumping (No Background Threads!)
     $V_BtnGenPreview.Add_Click({
-        $file = $V_InList.SelectedItem
-        if (-not $file -and $V_InList.Items.Count -gt 0) { $file = $V_InList.Items[0] }
-        if (-not $file) { [void][System.Windows.MessageBox]::Show("Select a video in the queue first.", "Missing Input", 0, 48); return }
+            $file = $V_InList.SelectedItem
+            if (-not $file -and $V_InList.Items.Count -gt 0) { $file = $V_InList.Items[0] }
+            if (-not $file) { [void][System.Windows.MessageBox]::Show("Select a video in the queue first.", "Missing Input", 0, 48); return }
 
-        $filePath = $file.ToString()
-        $startText = $V_TrimStart.Text
-        $endText = $V_TrimEnd.Text
+            $filePath = $file.ToString()
+            $startText = $V_TrimStart.Text
+            $endText = $V_TrimEnd.Text
 
-        $V_PreviewStack.Children.Clear()
-        $V_PreviewScroll.Visibility = "Visible"
-        $V_BtnGenPreview.IsEnabled = $false
-        $V_BtnGenPreview.Content = "Generating..."
-        $window.Cursor = [System.Windows.Input.Cursors]::Wait
+            $V_PreviewStack.Children.Clear()
+            $V_PreviewScroll.Visibility = "Visible"
+            $V_BtnGenPreview.IsEnabled = $false
+            $V_BtnGenPreview.Content = "Generating..."
+            $window.Cursor = [System.Windows.Input.Cursors]::Wait
 
-        # Pump the UI so the user immediately sees the "Generating..." text
-        $window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
+            # Pump the UI so the user immediately sees the "Generating..." text
+            $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
 
-        try {
-            $startSecs = 0
-            $endSecs = 0
+            try {
+                $startSecs = 0
+                $endSecs = 0
 
-            # Parse Start Time safely
-            if ($startText -match "(\d{2}):(\d{2}):(\d{2})") {
-                $startSecs = ([int]$matches[1] * 3600) + ([int]$matches[2] * 60) + [int]$matches[3]
-            }
-            # Parse End Time safely
-            if ($endText -match "(\d{2}):(\d{2}):(\d{2})") {
-                $endSecs = ([int]$matches[1] * 3600) + ([int]$matches[2] * 60) + [int]$matches[3]
-            }
-
-            # If end time is missing or smaller than start, fetch real duration
-            if ($endSecs -le $startSecs) {
-                $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
-                $pinfoDur.FileName = $script:State.ffprobe
-                $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$filePath`""
-                $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
-                $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-                $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
-                $pDur.WaitForExit()
-
-                $totalSecs = 0
-                if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs)) {
-                    $endSecs = $totalSecs
+                # Parse Start Time safely
+                if ($startText -match "(\d{2}):(\d{2}):(\d{2})") {
+                    $startSecs = ([int]$matches[1] * 3600) + ([int]$matches[2] * 60) + [int]$matches[3]
                 }
-            }
+                # Parse End Time safely
+                if ($endText -match "(\d{2}):(\d{2}):(\d{2})") {
+                    $endSecs = ([int]$matches[1] * 3600) + ([int]$matches[2] * 60) + [int]$matches[3]
+                }
 
-            $duration = $endSecs - $startSecs
-            if ($duration -le 0) { throw "Invalid duration calculated." }
+                # If end time is missing or smaller than start, fetch real duration
+                if ($endSecs -le $startSecs) {
+                    $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+                    $pinfoDur.FileName = $script:State.ffprobe
+                    $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$filePath`""
+                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                    $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                    $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+                    $pDur.WaitForExit()
 
-            # Loop through and grab 10 frames
-            for ($i = 1; $i -le 10; $i++) {
-                # Calculate percentage (approx 9%, 18%, 27%... up to 90%)
-                $percent = $i * 9 
-                $targetSec = $startSecs + ($duration * ($percent / 100.0))
+                    $totalSecs = 0
+                    if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs)) {
+                        $endSecs = $totalSecs
+                    }
+                }
+
+                $duration = $endSecs - $startSecs
+                if ($duration -le 0) { throw "Invalid duration calculated." }
+
+                # Loop through and grab 10 frames
+                for ($i = 1; $i -le 10; $i++) {
+                    # Calculate percentage (approx 9%, 18%, 27%... up to 90%)
+                    $percent = $i * 9 
+                    $targetSec = $startSecs + ($duration * ($percent / 100.0))
                 
-                # Format to HH:mm:ss
-                $ts = [TimeSpan]::FromSeconds($targetSec)
-                $timeStr = "{0:D2}:{1:D2}:{2:D2}" -f [int][math]::Floor($ts.TotalHours), $ts.Minutes, $ts.Seconds
+                    # Format to HH:mm:ss
+                    $ts = [TimeSpan]::FromSeconds($targetSec)
+                    $timeStr = "{0:D2}:{1:D2}:{2:D2}" -f [int][math]::Floor($ts.TotalHours), $ts.Minutes, $ts.Seconds
 
-                $outThumb = Join-Path $env:TEMP "thumb_preview_$i.jpg"
-                if (Test-Path $outThumb) { Remove-Item $outThumb -Force -ErrorAction SilentlyContinue }
+                    $outThumb = Join-Path $env:TEMP "thumb_preview_$i.jpg"
+                    if (Test-Path $outThumb) { Remove-Item $outThumb -Force -ErrorAction SilentlyContinue }
 
-                # Fast seeking extraction - Increased scale to 200px width for better quality on bigger display
-                $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-                $pinfo.FileName = $script:State.ffmpeg
-                $pinfo.Arguments = "-y -hide_banner -ss $timeStr -i `"$filePath`" -frames:v 1 -q:v 2 -vf scale=200:-1 `"$outThumb`""
-                $pinfo.UseShellExecute = $false; $pinfo.CreateNoWindow = $true
-                $p = [System.Diagnostics.Process]::Start($pinfo)
-                $p.WaitForExit()
+                    # Fast seeking extraction - Increased scale to 200px width for better quality on bigger display
+                    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+                    $pinfo.FileName = $script:State.ffmpeg
+                    $pinfo.Arguments = "-y -hide_banner -ss $timeStr -i `"$filePath`" -frames:v 1 -q:v 2 -vf scale=200:-1 `"$outThumb`""
+                    $pinfo.UseShellExecute = $false; $pinfo.CreateNoWindow = $true
+                    $p = [System.Diagnostics.Process]::Start($pinfo)
+                    $p.WaitForExit()
 
-                if (Test-Path $outThumb) {
-                    $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
-                    $bmp.BeginInit()
-                    $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-                    $bmp.CreateOptions = [System.Windows.Media.Imaging.BitmapCreateOptions]::IgnoreImageCache
-                    $bmp.UriSource = New-Object System.Uri($outThumb)
-                    $bmp.EndInit()
-                    $bmp.Freeze()
+                    if (Test-Path $outThumb) {
+                        $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
+                        $bmp.BeginInit()
+                        $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+                        $bmp.CreateOptions = [System.Windows.Media.Imaging.BitmapCreateOptions]::IgnoreImageCache
+                        $bmp.UriSource = New-Object System.Uri($outThumb)
+                        $bmp.EndInit()
+                        $bmp.Freeze()
                     
-                    $img = New-Object System.Windows.Controls.Image
-                    $img.Source = $bmp
-                    $img.Height = 100 # Increased from 60 to 100
-                    $img.Margin = New-Object System.Windows.Thickness(0, 0, 8, 0)
-                    $img.ToolTip = "Position: $percent% ($timeStr)"
+                        $img = New-Object System.Windows.Controls.Image
+                        $img.Source = $bmp
+                        $img.Height = 100 # Increased from 60 to 100
+                        $img.Margin = New-Object System.Windows.Thickness(0, 0, 8, 0)
+                        $img.ToolTip = "Position: $percent% ($timeStr)"
                     
-                    [void]$V_PreviewStack.Children.Add($img)
+                        [void]$V_PreviewStack.Children.Add($img)
                     
-                    # Force UI to draw the new larger image immediately
-                    $window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
+                        # Force UI to draw the new larger image immediately
+                        $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
+                    }
                 }
             }
-        }
-        catch {
-            [void][System.Windows.MessageBox]::Show("Timeline generation failed: $($_.Exception.Message)", "Error", 0, 16)
-        }
-        finally {
-            $V_BtnGenPreview.IsEnabled = $true
-            $V_BtnGenPreview.Content = "Generate Visual Timeline"
-            $window.Cursor = [System.Windows.Input.Cursors]::Arrow
-        }
-    })
+            catch {
+                [void][System.Windows.MessageBox]::Show("Timeline generation failed: $($_.Exception.Message)", "Error", 0, 16)
+            }
+            finally {
+                $V_BtnGenPreview.IsEnabled = $true
+                $V_BtnGenPreview.Content = "Generate Visual Timeline"
+                $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+            }
+        })
 
     $V_SliderCRF.Add_ValueChanged({ 
             $val = [math]::Round($V_SliderCRF.Value)
@@ -2598,79 +2685,146 @@ try {
     $V_BtnInfo.Add_Click({ Show-MediaInfoDialog $V_InList.SelectedItem $V_BtnInfo })
     $I_BtnInfo.Add_Click({ Show-MediaInfoDialog $I_InList.SelectedItem $I_BtnInfo })
 
-    # Placeholder logic for TextBoxes
-    $A_TrimStart.Add_GotFocus({ if ($A_TrimStart.Text -eq "00:00:00") { $A_TrimStart.Text = "" } }); $A_TrimStart.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($A_TrimStart.Text)) { $A_TrimStart.Text = "00:00:00" } })
-    $A_TrimEnd.Add_GotFocus({ if ($A_TrimEnd.Text -eq "00:00:00") { $A_TrimEnd.Text = "" } }); $A_TrimEnd.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($A_TrimEnd.Text)) { $A_TrimEnd.Text = "00:00:00" } })
-    $V_TrimStart.Add_GotFocus({ if ($V_TrimStart.Text -eq "00:00:00") { $V_TrimStart.Text = "" } }); $V_TrimStart.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($V_TrimStart.Text)) { $V_TrimStart.Text = "00:00:00" } })
-    $V_TrimEnd.Add_GotFocus({ if ($V_TrimEnd.Text -eq "00:00:00") { $V_TrimEnd.Text = "" } }); $V_TrimEnd.Add_LostFocus({ if ([string]::IsNullOrWhiteSpace($V_TrimEnd.Text)) { $V_TrimEnd.Text = "00:00:00" } })
+    # --- STRICT TRIM UI & VALIDATION LOGIC ---
+    
+    function Enforce-TimeStr([string]$txt) {
+        $ts = [TimeSpan]::Zero
+        if ([TimeSpan]::TryParse($txt, [ref]$ts)) { return "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds }
+        return "00:00:00"
+    }
+
+    # Audio TextBoxes sync to Sliders
+    $A_TrimStart.Add_LostFocus({ 
+            $A_TrimStart.Text = Enforce-TimeStr $A_TrimStart.Text
+            $ts = [TimeSpan]::Parse($A_TrimStart.Text); if ($ts.TotalSeconds -le $A_SliderTrimStart.Maximum) { $A_SliderTrimStart.Value = $ts.TotalSeconds } 
+        })
+    $A_TrimEnd.Add_LostFocus({ 
+            $A_TrimEnd.Text = Enforce-TimeStr $A_TrimEnd.Text
+            $ts = [TimeSpan]::Parse($A_TrimEnd.Text); if ($ts.TotalSeconds -le $A_SliderTrimEnd.Maximum) { $A_SliderTrimEnd.Value = $ts.TotalSeconds } 
+        })
+    
+    # Video TextBoxes sync to Sliders
+    $V_TrimStart.Add_LostFocus({ 
+            $V_TrimStart.Text = Enforce-TimeStr $V_TrimStart.Text
+            $ts = [TimeSpan]::Parse($V_TrimStart.Text); if ($ts.TotalSeconds -le $V_SliderTrimStart.Maximum) { $V_SliderTrimStart.Value = $ts.TotalSeconds } 
+        })
+    $V_TrimEnd.Add_LostFocus({ 
+            $V_TrimEnd.Text = Enforce-TimeStr $V_TrimEnd.Text
+            $ts = [TimeSpan]::Parse($V_TrimEnd.Text); if ($ts.TotalSeconds -le $V_SliderTrimEnd.Maximum) { $V_SliderTrimEnd.Value = $ts.TotalSeconds } 
+        })
 
     # Interactive Audio Trimmer Slider Logic
     $A_SliderTrimStart.Add_ValueChanged({
-        $ts = [TimeSpan]::FromSeconds($A_SliderTrimStart.Value)
-        $A_TrimStart.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
-        if ($A_SliderTrimStart.Value -gt $A_SliderTrimEnd.Value -and $A_SliderTrimEnd.Value -gt 0) { $A_SliderTrimEnd.Value = $A_SliderTrimStart.Value }
-        Update-AllPreviews
-    })
+            if ($A_SliderTrimStart.Value -ge $A_SliderTrimEnd.Value -and $A_SliderTrimEnd.Value -gt 0) { $A_SliderTrimStart.Value = $A_SliderTrimEnd.Value - 1 }
+            $ts = [TimeSpan]::FromSeconds($A_SliderTrimStart.Value)
+            $A_TrimStart.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+            Update-AllPreviews
+        })
     $A_SliderTrimEnd.Add_ValueChanged({
-        $ts = [TimeSpan]::FromSeconds($A_SliderTrimEnd.Value)
-        $A_TrimEnd.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
-        if ($A_SliderTrimEnd.Value -lt $A_SliderTrimStart.Value) { $A_SliderTrimStart.Value = $A_SliderTrimEnd.Value }
-        Update-AllPreviews
-    })
-
-    # Update Audio Sliders when a new audio file is selected
-    $A_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { 
-        if ($null -ne $A_InList.SelectedItem -and $script:State.ffprobeFound) {
-            $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
-            $pinfoDur.FileName = $script:State.ffprobe
-            $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($A_InList.SelectedItem)`""
-            $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
-            $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-            $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
-            $pDur.WaitForExit()
-            
-            $totalSecs = 0
-            if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs) -and $totalSecs -gt 0) {
-                $A_SliderTrimStart.IsEnabled = $true; $A_SliderTrimEnd.IsEnabled = $true
-                $A_SliderTrimStart.Maximum = $totalSecs; $A_SliderTrimEnd.Maximum = $totalSecs
-                $A_SliderTrimStart.Value = 0; $A_SliderTrimEnd.Value = $totalSecs
-            }
-        } else {
-            $A_SliderTrimStart.IsEnabled = $false; $A_SliderTrimEnd.IsEnabled = $false
-        }
-        Update-AudioFfmpegPreview 
-    })
+            if ($A_SliderTrimEnd.Value -le $A_SliderTrimStart.Value -and $A_SliderTrimEnd.Value -gt 0) { $A_SliderTrimEnd.Value = $A_SliderTrimStart.Value + 1 }
+            $ts = [TimeSpan]::FromSeconds($A_SliderTrimEnd.Value)
+            $A_TrimEnd.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+            Update-AllPreviews
+        })
 
     # Interactive Video Trimmer Slider Logic
     $V_SliderTrimStart.Add_ValueChanged({
-        $ts = [TimeSpan]::FromSeconds($V_SliderTrimEnd.Value)
-        $V_TrimEnd.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
-        if ($V_SliderTrimEnd.Value -lt $V_SliderTrimStart.Value) { $V_SliderTrimStart.Value = $V_SliderTrimEnd.Value }
-        Update-AllPreviews
-    })
+            if ($V_SliderTrimStart.Value -ge $V_SliderTrimEnd.Value -and $V_SliderTrimEnd.Value -gt 0) { $V_SliderTrimStart.Value = $V_SliderTrimEnd.Value - 1 }
+            $ts = [TimeSpan]::FromSeconds($V_SliderTrimStart.Value)
+            $V_TrimStart.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+            Update-AllPreviews
+        })
+    $V_SliderTrimEnd.Add_ValueChanged({
+            if ($V_SliderTrimEnd.Value -le $V_SliderTrimStart.Value -and $V_SliderTrimEnd.Value -gt 0) { $V_SliderTrimEnd.Value = $V_SliderTrimStart.Value + 1 }
+            $ts = [TimeSpan]::FromSeconds($V_SliderTrimEnd.Value)
+            $V_TrimEnd.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+            Update-AllPreviews
+        })
 
-    # Update Sliders when a new video is selected
-    $V_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { 
-        if ($null -ne $V_InList.SelectedItem -and $script:State.ffprobeFound) {
+    # Core function to extract media duration using FFprobe
+    function Get-MediaDuration ([string]$FilePath) {
+        if (-not $script:State.ffprobeFound -or -not (Test-Path -LiteralPath $FilePath)) { return 0 }
+        try {
             $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
             $pinfoDur.FileName = $script:State.ffprobe
-            $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($V_InList.SelectedItem)`""
+            $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$FilePath`""
             $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
             $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
             $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
             $pDur.WaitForExit()
-            
             $totalSecs = 0
-            if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs) -and $totalSecs -gt 0) {
-                $V_SliderTrimStart.IsEnabled = $true; $V_SliderTrimEnd.IsEnabled = $true
-                $V_SliderTrimStart.Maximum = $totalSecs; $V_SliderTrimEnd.Maximum = $totalSecs
-                $V_SliderTrimStart.Value = 0; $V_SliderTrimEnd.Value = $totalSecs
+            if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs)) {
+                return $totalSecs
             }
-        } else {
-            $V_SliderTrimStart.IsEnabled = $false; $V_SliderTrimEnd.IsEnabled = $false
         }
-        Update-FfmpegPreview 
-    })    
+        catch {}
+        return 0
+    }
+
+    # Update Audio Sliders when a new audio file is selected
+    $A_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { 
+            if ($A_InList.SelectedItem) {
+                $totalSecs = Get-MediaDuration $A_InList.SelectedItem.ToString()
+                if ($totalSecs -gt 0) {
+                    $A_SliderTrimStart.IsEnabled = $true; $A_SliderTrimEnd.IsEnabled = $true
+                    $A_SliderTrimStart.Maximum = $totalSecs; $A_SliderTrimEnd.Maximum = $totalSecs
+                    $A_SliderTrimStart.Value = 0; $A_SliderTrimEnd.Value = $totalSecs
+                }
+            }
+            else {
+                $A_SliderTrimStart.IsEnabled = $false; $A_SliderTrimEnd.IsEnabled = $false
+            }
+            Update-AudioFfmpegPreview 
+        })
+
+    # Update Video Sliders when a new video is selected
+    $V_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { 
+            if ($V_InList.SelectedItem) {
+                $totalSecs = Get-MediaDuration $V_InList.SelectedItem.ToString()
+                if ($totalSecs -gt 0) {
+                    $V_SliderTrimStart.IsEnabled = $true; $V_SliderTrimEnd.IsEnabled = $true
+                    $V_SliderTrimStart.Maximum = $totalSecs; $V_SliderTrimEnd.Maximum = $totalSecs
+                    $V_SliderTrimStart.Value = 0; $V_SliderTrimEnd.Value = $totalSecs
+                }
+            }
+            else {
+                $V_SliderTrimStart.IsEnabled = $false; $V_SliderTrimEnd.IsEnabled = $false
+            }
+            Update-FfmpegPreview 
+        })
+    # --- END STRICT TRIM UI LOGIC ---
+
+    # Interactive Video Trimmer Slider Logic
+    $V_SliderTrimStart.Add_ValueChanged({
+            $ts = [TimeSpan]::FromSeconds($V_SliderTrimEnd.Value)
+            $V_TrimEnd.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+            if ($V_SliderTrimEnd.Value -lt $V_SliderTrimStart.Value) { $V_SliderTrimStart.Value = $V_SliderTrimEnd.Value }
+            Update-AllPreviews
+        })
+
+    # Update Sliders when a new video is selected
+    $V_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { 
+            if ($null -ne $V_InList.SelectedItem -and $script:State.ffprobeFound) {
+                $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+                $pinfoDur.FileName = $script:State.ffprobe
+                $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($V_InList.SelectedItem)`""
+                $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+                $pDur.WaitForExit()
+            
+                $totalSecs = 0
+                if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs) -and $totalSecs -gt 0) {
+                    $V_SliderTrimStart.IsEnabled = $true; $V_SliderTrimEnd.IsEnabled = $true
+                    $V_SliderTrimStart.Maximum = $totalSecs; $V_SliderTrimEnd.Maximum = $totalSecs
+                    $V_SliderTrimStart.Value = 0; $V_SliderTrimEnd.Value = $totalSecs
+                }
+            }
+            else {
+                $V_SliderTrimStart.IsEnabled = $false; $V_SliderTrimEnd.IsEnabled = $false
+            }
+            Update-FfmpegPreview 
+        })    
     $Y_Link.Add_GotKeyboardFocus({ if ($Y_Link.Text -eq "https://") { $Y_Link.Text = "" } })
     $Y_Link.Add_LostKeyboardFocus({ if ([string]::IsNullOrWhiteSpace($Y_Link.Text)) { $Y_Link.Text = "https://" } })
 
@@ -2888,6 +3042,34 @@ try {
             $TxtETA.Text = "ETA: --:--"
             $TaskbarProgress.ProgressState = "None"
             
+            # --- ADDED: Print Batch Overview for yt-dlp ---
+            $dlCount = if ($script:State.YtDlpDownloadedTitles) { $script:State.YtDlpDownloadedTitles.Count } else { 0 }
+            $skipCount = if ($script:State.YtDlpSkippedLinks) { $script:State.YtDlpSkippedLinks.Count } else { 0 }
+
+            # Show overview if there were multiple downloads OR if anything was skipped
+            if ($dlCount -gt 1 -or $skipCount -gt 0) {
+                $LogBox.AppendText("`r`n============================================================`r`n")
+                $LogBox.AppendText("[BATCH COMPLETE] Successfully processed your queue!`r`n`r`n")
+                
+                if ($dlCount -gt 0) {
+                    $LogBox.AppendText("Downloaded ($dlCount) videos:`r`n")
+                    foreach ($title in $script:State.YtDlpDownloadedTitles) {
+                        $LogBox.AppendText(" -> $title`r`n")
+                    }
+                }
+
+                if ($skipCount -gt 0) {
+                    $LogBox.AppendText("`r`nSkipped the following links:`r`n")
+                    foreach ($skipped in $script:State.YtDlpSkippedLinks) {
+                        $LogBox.AppendText("$skipped`r`n")
+                    }
+                }
+
+                $LogBox.AppendText("============================================================`r`n")
+                if ($CbAutoScrollLog.IsChecked) { $LogBox.ScrollToEnd() }
+            }
+            # ----------------------------------------------
+            
             if ($LogBox.Text -match "\[ERROR\]") {
                 $StatusText.Text = "Finished with errors! Check the live log."
                 $StatusText.Foreground = "#EF4444" 
@@ -2909,6 +3091,11 @@ try {
 
             if ($Config.PlaySound) {
                 [System.Media.SystemSounds]::Asterisk.Play()
+            }
+            
+            if ($script:TrayIcon) {
+                $msg = if ($LogBox.Text -match "\[ERROR\]") { "Process finished with errors. Check the live log for details." } else { "All queued files were processed successfully!" }
+                $script:TrayIcon.ShowBalloonTip(3000, "Media Converter Pro", $msg, [System.Windows.Forms.ToolTipIcon]::Info)
             }
             
             Save-Queue
@@ -2937,26 +3124,35 @@ try {
             foreach ($arg in $job.Args) { $rawArgs += $arg.ToString().Trim() }
 
             $argString = ($rawArgs | ForEach-Object {
-                $str = [string]$_
-                if ([string]::IsNullOrWhiteSpace($str)) { return '""' }
+                    $str = [string]$_
+                    if ([string]::IsNullOrWhiteSpace($str)) { return '""' }
                 
-                # If already cleanly quoted, leave it
-                if ($str -match '^".*"$') { return $str }
+                    # If already cleanly quoted, leave it
+                    if ($str -match '^".*"$') { return $str }
 
-                # Wrap in quotes if it contains spaces or CMD reserved characters
-                if ($str -match '[\s&^<>|%!=:]') {
-                    # Safely escape internal quotes AND protect trailing backslashes
-                    $str = $str -replace '(\\+)"', '$1$1\"' -replace '(\\+)$', '$1$1' -replace '"', '\"'
-                    return "`"$str`""
-                }
-                return $str
-            }) -join " "
+                    # Wrap in quotes if it contains spaces or CMD reserved characters
+                    if ($str -match '[\s&^<>|%!=:]') {
+                        # Safely escape internal quotes AND protect trailing backslashes
+                        $str = $str -replace '(\\+)"', '$1$1\"' -replace '(\\+)$', '$1$1' -replace '"', '\"'
+                        return "`"$str`""
+                    }
+                    return $str
+                }) -join " "
 
             $toolPath = if ($job.IsYtDlp) { $script:State.ytdlp } 
             elseif ($job.CustomTool) { $job.CustomTool } 
             else { $script:State.ffmpeg }
 
             Write-ConvertLog "Executing: $toolPath $argString"
+
+            # --- ADDED: Print exact command to the Live Log UI ---
+            $friendlyToolName = if ($job.IsYtDlp) { "yt-dlp" } elseif ($job.CustomTool) { [System.IO.Path]::GetFileNameWithoutExtension($job.CustomTool) } else { "ffmpeg" }
+            
+            $LogBox.AppendText("`r`n============================================================`r`n")
+            $LogBox.AppendText("[$($friendlyToolName.ToUpper()) COMMAND USED]:`r`n")
+            $LogBox.AppendText("`"$toolPath`" $argString`r`n")
+            $LogBox.AppendText("============================================================`r`n")
+            # -----------------------------------------------------
 
             if ($job.IsYtDlp) {
                 $LogBox.AppendText("`r`n[INFO] Starting YouTube-DLP Job...`r`n")
@@ -3002,15 +3198,15 @@ try {
             
             # Log directly to the UI so the user knows what happened without halting the queue
             $window.Dispatcher.InvokeAsync([Action] {
-                $LogBox.AppendText("`r`n[CRITICAL ERROR] $errMsg`r`nSkipping to next job...`r`n")
-                if ($CbAutoScrollLog.IsChecked) { $LogBox.ScrollToEnd() }
+                    $LogBox.AppendText("`r`n[CRITICAL ERROR] $errMsg`r`nSkipping to next job...`r`n")
+                    if ($CbAutoScrollLog.IsChecked) { $LogBox.ScrollToEnd() }
                 
-                # Clean up process if it hung
-                if ($script:State.p) { try { $script:State.p.Dispose() } catch {}; $script:State.p = $null }
+                    # Clean up process if it hung
+                    if ($script:State.p) { try { $script:State.p.Dispose() } catch {}; $script:State.p = $null }
 
-                $script:State.CurrentJobIndex++
-                Process-NextJob
-            }, [System.Windows.Threading.DispatcherPriority]::Background)
+                    $script:State.CurrentJobIndex++
+                    Process-NextJob
+                }, [System.Windows.Threading.DispatcherPriority]::Background)
         }
     }
 
@@ -3158,7 +3354,7 @@ try {
                         $StatusText.Text = "Finished Successfully."
                         $StatusText.Foreground = "#10B981"
 
-                        if ($job.IsYtDlp -and $script:State.ffprobeFound) {
+                        if ($job.IsYtDlp) {
                             try {
                                 $finalFile = $job.OutputFile -replace '\.part$', '' -replace '\.ytdl$', ''
                                 if (-not $finalFile -or -not (Test-Path -LiteralPath $finalFile)) {
@@ -3166,35 +3362,44 @@ try {
                                 }
 
                                 if ($finalFile -and (Test-Path -LiteralPath $finalFile)) {
-                                    $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
-                                    $pinfoDur.FileName = $script:State.ffprobe
-                                    $pinfoDur.Arguments = "-v error -show_entries format=duration:stream=width,height -of json `"$finalFile`""
-                                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
-                                    $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-                                    $jsonOut = $pDur.StandardOutput.ReadToEnd()
-                                    $pDur.WaitForExit()
-  
                                     $dlTitle = [System.IO.Path]::GetFileNameWithoutExtension($finalFile)
                                     $dlDur = "Unknown"
                                     $dlQual = "Audio Only"
-  
-                                    if ($jsonOut) {
-                                        $mediaInfo = $jsonOut | ConvertFrom-Json
-                                        if ($mediaInfo.format.duration) {
-                                            $ts = [TimeSpan]::FromSeconds([double]$mediaInfo.format.duration)
-                                            $dlDur = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
-                                        }
-                                        if ($mediaInfo.streams) {
-                                            $videoStream = $mediaInfo.streams | Where-Object { $_.width } | Select-Object -First 1
-                                            if ($videoStream) {
-                                                $dlQual = "$($videoStream.width)x$($videoStream.height)"
-                                                if ($videoStream.height -ge 2160) { $dlQual += " (4K)" }
-                                                elseif ($videoStream.height -ge 1440) { $dlQual += " (2K)" }
-                                                elseif ($videoStream.height -ge 1080) { $dlQual += " (1080p)" }
-                                                elseif ($videoStream.height -ge 720) { $dlQual += " (720p)" }
+
+                                    # --- ADDED: Save title to memory for the batch overview ---
+                                    if ($null -eq $script:State.YtDlpDownloadedTitles) { $script:State.YtDlpDownloadedTitles = @() }
+                                    $script:State.YtDlpDownloadedTitles += $dlTitle
+                                    # ----------------------------------------------------------
+
+                                    # Only run FFprobe if it actually exists on the system
+                                    if ($script:State.ffprobeFound) {
+                                        $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+                                        $pinfoDur.FileName = $script:State.ffprobe
+                                        $pinfoDur.Arguments = "-v error -show_entries format=duration:stream=width,height -of json `"$finalFile`""
+                                        $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                                        $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                                        $jsonOut = $pDur.StandardOutput.ReadToEnd()
+                                        $pDur.WaitForExit()
+                                        
+                                        if ($jsonOut) {
+                                            $mediaInfo = $jsonOut | ConvertFrom-Json
+                                            if ($mediaInfo.format.duration) {
+                                                $ts = [TimeSpan]::FromSeconds([double]$mediaInfo.format.duration)
+                                                $dlDur = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+                                            }
+                                            if ($mediaInfo.streams) {
+                                                $videoStream = $mediaInfo.streams | Where-Object { $_.width } | Select-Object -First 1
+                                                if ($videoStream) {
+                                                    $dlQual = "$($videoStream.width)x$($videoStream.height)"
+                                                    if ($videoStream.height -ge 2160) { $dlQual += " (4K)" }
+                                                    elseif ($videoStream.height -ge 1440) { $dlQual += " (2K)" }
+                                                    elseif ($videoStream.height -ge 1080) { $dlQual += " (1080p)" }
+                                                    elseif ($videoStream.height -ge 720) { $dlQual += " (720p)" }
+                                                }
                                             }
                                         }
                                     }
+
                                     $LogBox.AppendText("`r`n----------------------------------------`r`n")
                                     $LogBox.AppendText(" DOWNLOAD SUMMARY`r`n")
                                     $LogBox.AppendText(" Title:   $dlTitle`r`n")
@@ -3280,6 +3485,8 @@ try {
     
             $script:State.BatchQueue = @()
             $script:State.CurrentJobIndex = 0
+            $script:State.YtDlpDownloadedTitles = @() 
+            $script:State.YtDlpSkippedLinks = @() # ADDED: Track skipped links
             $LogBox.Clear()
 
             $customParamText = ""
@@ -3340,198 +3547,315 @@ try {
                     return 
                 }
 
-                $link = $Y_Link.Text.Trim()
-                if ([string]::IsNullOrWhiteSpace($link) -or 
-                    $link -eq "https://" -or 
-                    $link -match "target url" -or 
-                    $link -notmatch "^(https?://|www\.)") { 
-                    [void][System.Windows.MessageBox]::Show("Please enter a valid URL. (Format: https://website.com)", "Error", 0, 16)
-                    return 
-                }
+                $linksToProcess = [System.Collections.Generic.List[string]]::new()
 
-                
-                if (-not (Check-YtDlpSupport $link)) { return }
-
-                $isSupported = $false
-                try {
-                    $uri = [System.Uri]($link -replace "^www\.", "https://www.")
-                    $hostName = $uri.Host.ToLower().Replace("www.", "")
-                    $domainPart = ($hostName -split '\.')[0]
-                    if ($hostName -match "youtu\.be") { $domainPart = "youtube" }
-
-                    $commonSites = @(
-                        "youtube", "youtu", "arte", "vimeo", "twitch", "facebook",
-                        "instagram", "twitter", "x", "tiktok", "soundcloud",
-                        "dailymotion", "reddit", "kick", "rumble"
-                    )
-        
-                    if ($commonSites -contains $domainPart -or $commonSites -contains $hostName) {
-                        $isSupported = $true
+                # Check which sub-tab the user is currently using
+                if ($Y_InputTabs.SelectedIndex -eq 1) {
+                    $batchPath = $Y_BatchFile.Text.Trim()
+                    if ([string]::IsNullOrWhiteSpace($batchPath) -or -not (Test-Path -LiteralPath $batchPath)) {
+                        [void][System.Windows.MessageBox]::Show("Please select a valid .txt file containing URLs.", "Missing Batch File", 0, 16)
+                        return
                     }
-
-                    if (-not $isSupported) {
-                        if ($null -eq $script:State.SupportedSitesCache -or $script:State.SupportedSitesCache.Length -eq 0) {
-                            try {
-                                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-                                $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
-                                $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing
-                            }
-                            catch {
-                                $script:State.SupportedSitesCache = "fallback_offline"
-                            }
-                        }
-            
-                        if ($script:State.SupportedSitesCache -is [array]) {
-                            if ($script:State.SupportedSitesCache -match $domainPart) { $isSupported = $true }
-                        }
-                        else {
-                            if ($script:State.SupportedSitesCache -match "(?i)\b$domainPart\b") { $isSupported = $true }
+                    
+                    # Read text file, ignore empty lines and comments starting with #
+                    $lines = Get-Content -LiteralPath $batchPath
+                    foreach ($line in $lines) {
+                        $l = $line.Trim()
+                        if (-not [string]::IsNullOrWhiteSpace($l) -and $l -notmatch "^#") {
+                            $linksToProcess.Add($l)
                         }
                     }
+                    
+                    if ($linksToProcess.Count -eq 0) {
+                        [void][System.Windows.MessageBox]::Show("No valid links found in the text file.", "Empty File", 0, 48)
+                        return
+                    }
                 }
-                catch { 
-                    $isSupported = $true 
-                }
-
-                if (-not $isSupported) {
-                    $win = New-Object System.Windows.Window
-                    $win.Title = "Unsupported Site"
-                    $win.SizeToContent = "WidthAndHeight"
-                    $win.WindowStartupLocation = "CenterScreen"
-                    $win.Background = $window.Resources["BgBrush"]
-                    $win.ResizeMode = "NoResize"
-    
-                    $sp = New-Object System.Windows.Controls.StackPanel
-                    $sp.Margin = 20
-    
-                    $tb = New-Object System.Windows.Controls.TextBlock
-                    $tb.TextWrapping = "Wrap"
-                    $tb.MaxWidth = 450
-                    $tb.Margin = "0,0,0,15"
-                    $tb.Foreground = $window.Resources["TextBrush"]
-                    $tb.Inlines.Add("The site '$domainPart' might not be officially supported.`n`nCheck the full list here:`n")
-    
-                    $hl = New-Object System.Windows.Documents.Hyperlink
-                    $hl.NavigateUri = "https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md"
-                    $hl.Inlines.Add("yt-dlp Supported Sites List")
-                    $hl.Add_Click({ [void](Start-Process $hl.NavigateUri) })
-                    $tb.Inlines.Add($hl)
-                    $tb.Inlines.Add("`n`nDo you want to attempt the download anyway? It might still work via the generic fallback extractor.")
-    
-                    [void]$sp.Children.Add($tb)
-
-                    $btnSp = New-Object System.Windows.Controls.StackPanel
-                    $btnSp.Orientation = "Horizontal"
-                    $btnSp.HorizontalAlignment = "Right"
-
-                    $btnTry = New-Object System.Windows.Controls.Button
-                    $btnTry.Content = "Try Anyway"
-                    $btnTry.Width = 100
-                    $btnTry.Height = 35
-                    $btnTry.Margin = "0,0,10,0"
-                    $btnTry.Background = "#10B981"
-                    $btnTry.Foreground = "White"
-                    $btnTry.BorderThickness = 0
-                    $btnTry.Cursor = "Hand"
-                    $btnTry.Add_Click({ $win.DialogResult = $true; $win.Close() })
-
-                    $btnCancel = New-Object System.Windows.Controls.Button
-                    $btnCancel.Content = "Cancel"
-                    $btnCancel.Width = 100
-                    $btnCancel.Height = 35
-                    $btnCancel.Background = "#6B7280"
-                    $btnCancel.Foreground = "White"
-                    $btnCancel.BorderThickness = 0
-                    $btnCancel.Cursor = "Hand"
-                    $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
-
-                    [void]$btnSp.Children.Add($btnTry)
-                    [void]$btnSp.Children.Add($btnCancel)
-                    [void]$sp.Children.Add($btnSp)
-                    $win.Content = $sp
-
-                    if ($win.ShowDialog() -ne $true) { return }
+                else {
+                    $singleLink = $Y_Link.Text.Trim()
+                    if ([string]::IsNullOrWhiteSpace($singleLink) -or $singleLink -eq "https://" -or $singleLink -notmatch "^(https?://|www\.)") { 
+                        [void][System.Windows.MessageBox]::Show("Please enter a valid URL. (Format: https://website.com)", "Error", 0, 16)
+                        return 
+                    }
+                    $linksToProcess.Add($singleLink)
                 }
 
                 $baseOut = $Y_OutDir.Text
                 if ($baseOut -match "Select target" -or [string]::IsNullOrWhiteSpace($baseOut)) { 
-                    if ($Y_Type.SelectedIndex -eq 1) {
-                        $outDir = Join-Path $ScriptDir "download\audio" 
-                    }
-                    else {
-                        $outDir = Join-Path $ScriptDir "download\video" 
-                    }
+                    $outDir = if ($Y_Type.SelectedIndex -eq 1) { Join-Path $ScriptDir "download\audio" } else { Join-Path $ScriptDir "download\video" }
                 }
                 else { 
                     $outDir = $baseOut
                 }
 
-                if (-not (Test-Path $outDir)) { 
-                    [void](New-Item -ItemType Directory -Path $outDir -Force) 
-                }
+                if (-not (Test-Path $outDir)) { [void](New-Item -ItemType Directory -Path $outDir -Force) }
                 $script:State.lastOutDir = $outDir
 
-                $playlistFlag = "--no-playlist"
-                if ($link -match "list=") {
-                    $ans = [System.Windows.MessageBox]::Show("Your link includes a playlist. Your Link:`n$link`nDownload full playlist?", "Playlist detected", "YesNoCancel", "Question")
-                    if ($ans -eq "Cancel") { return }
-                    $playlistFlag = if ($ans -eq "Yes") { "--yes-playlist" } else { "--no-playlist" }
+                # --- NEW BATCH PRE-SCAN FOR UNSUPPORTED DOMAINS ---
+                $unsupportedDomains = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+                $validLinks = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+                
+                # Fetch supported sites list to cache it for the batch check
+                if ($null -eq $script:State.SupportedSitesCache -or $script:State.SupportedSitesCache.Length -eq 0) {
+                    try {
+                        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                        $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
+                        $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -TimeoutSec 5
+                    }
+                    catch { $script:State.SupportedSitesCache = "fallback_offline" }
                 }
 
-                $jobStart = Get-Date
-                $existing = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-                try {
-                    foreach ($f in [System.IO.Directory]::EnumerateFiles($outDir)) { [void]$existing.Add($f) }
-                }
-                catch {}
+                foreach ($chkLink in $linksToProcess) {
+                    if ([string]::IsNullOrWhiteSpace($chkLink) -or $chkLink -notmatch "^(https?://|www\.)") { continue }
+                    
+                    $isSup = $false
+                    $domainPart = "Unknown"
+                    try {
+                        $uri = [System.Uri]($chkLink -replace "^www\.", "https://www.")
+                        $hostName = $uri.Host.ToLower() -replace "^www\.", ""
+                        $domainParts = $hostName -split '\.'
+                        $domainPart = $hostName
+                        if ($domainParts.Count -ge 2) {
+                            if ($domainParts[-2].Length -le 3 -and $domainParts.Count -ge 3) { $domainPart = $domainParts[-3] }
+                            else { $domainPart = $domainParts[-2] }
+                        }
+                        if ($hostName -match "youtu\.be") { $domainPart = "youtube" }
 
-                function Get-YtDlpActiveOutputFile {
-                    param(
-                        [string]  $OutDir,
-                        [datetime]$StartTime,
-                        [string[]]$ExistingFiles
-                    )
+                        $commonSites = @("youtube", "youtu", "arte", "vimeo", "twitch", "facebook", "instagram", "twitter", "x", "tiktok", "soundcloud", "dailymotion", "reddit", "kick", "rumble")
+                        if ($commonSites -contains $domainPart -or $commonSites -contains $hostName) { $isSup = $true }
 
-                    $candidates = Get-ChildItem -Path $OutDir -File -ErrorAction SilentlyContinue
-                    foreach ($f in $candidates) {
-                        if ($ExistingFiles.Contains($f.FullName)) { continue }
-
-                        $delta = ($f.LastWriteTime - $StartTime).TotalSeconds
-                        if ($delta -lt -5) { continue }
-
-                        if ($f.Name -match '.*\.[^\.]+(\.part)?$') {
-                            return $f
+                        if (-not $isSup) {
+                            if ($script:State.SupportedSitesCache -is [array]) {
+                                if ($script:State.SupportedSitesCache -match $domainPart) { $isSup = $true }
+                            }
+                            else {
+                                if ($script:State.SupportedSitesCache -match "(?i)\b$domainPart\b") { $isSup = $true }
+                            }
                         }
                     }
-                    return $null
+                    catch { $isSup = $true }
+
+                    if ($isSup) {
+                        [void]$validLinks.Add($chkLink)
+                    }
+                    else {
+                        [void]$unsupportedDomains.Add($domainPart)
+                    }
                 }
 
-                $argsSafe = Get-YtDlpArgs -isPreview $false -ExcludeCustom $true -PlaylistFlag $playlistFlag
-                if ($null -eq $argsSafe) { return }
+                $batchIgnoreUnsupported = $false
+                if ($unsupportedDomains.Count -gt 0) {
+                    $domainList = ($unsupportedDomains -join ", ")
+                    $msg = "Your list includes potentially unsupported pages:`n`n$domainList`n`nDo you want to attempt downloading them anyway? (They might fail, but won't break the queue)"
+                    
+                    $win = New-Object System.Windows.Window
+                    $win.Title = "Unsupported Sites Detected"
+                    $win.SizeToContent = "WidthAndHeight"; $win.WindowStartupLocation = "CenterScreen"
+                    $win.Background = $window.Resources["BgBrush"]; $win.ResizeMode = "NoResize"
+                    
+                    $sp = New-Object System.Windows.Controls.StackPanel
+                    $sp.Margin = 20
+                    
+                    $tb = New-Object System.Windows.Controls.TextBlock
+                    $tb.TextWrapping = "Wrap"; $tb.MaxWidth = 450; $tb.Margin = "0,0,0,15"
+                    $tb.Foreground = $window.Resources["TextBrush"]
+                    $tb.Text = $msg
+                    [void]$sp.Children.Add($tb)
 
-                $argsFull = Get-YtDlpArgs -isPreview $false -ExcludeCustom $false -PlaylistFlag $playlistFlag
-                $hasCustom = [bool](
-                    $Y_CheckCustomParams.IsChecked -and 
-                    -not [string]::IsNullOrWhiteSpace($Y_CustomParams.Text)
-                )
+                    $btnSp = New-Object System.Windows.Controls.StackPanel
+                    $btnSp.Orientation = "Horizontal"; $btnSp.HorizontalAlignment = "Right"
 
-                $script:State.BatchQueue += @{ 
-                    Args            = $argsFull
-                    SafeArgs        = $argsSafe
-                    HasCustomParams = $hasCustom
-                    Retried         = $false
-                    IsYtDlp         = $true
-                    SelectedRes     = (Get-CbVal $Y_Res)
-                    OutputFile      = $null
-                    OutputDir       = $outDir
-                    JobStart        = $jobStart
-                    ExistingFiles   = $existing
-                    ActiveOutput    = $null
-                    ListBox         = $null
-                    ListItem        = $null 
+                    $btnTry = New-Object System.Windows.Controls.Button
+                    $btnTry.Content = "Yes (Try Anyway)"; $btnTry.Width = 120; $btnTry.Height = 35; $btnTry.Margin = "0,0,10,0"
+                    $btnTry.Background = "#10B981"; $btnTry.Foreground = "White"; $btnTry.BorderThickness = 0; $btnTry.Cursor = "Hand"
+                    $btnTry.Add_Click({ $win.DialogResult = $true; $win.Close() })
+
+                    $btnCancel = New-Object System.Windows.Controls.Button
+                    $btnCancel.Content = "No (Skip Them)"; $btnCancel.Width = 120; $btnCancel.Height = 35
+                    $btnCancel.Background = "#6B7280"; $btnCancel.Foreground = "White"; $btnCancel.BorderThickness = 0; $btnCancel.Cursor = "Hand"
+                    $btnCancel.Add_Click({ $win.DialogResult = $false; $win.Close() })
+
+                    [void]$btnSp.Children.Add($btnTry); [void]$btnSp.Children.Add($btnCancel)
+                    [void]$sp.Children.Add($btnSp)
+                    $win.Content = $sp
+
+                    if ($win.ShowDialog() -eq $true) {
+                        $batchIgnoreUnsupported = $true
+                    }
+                    else {
+                        [void][System.Windows.MessageBox]::Show("Unsupported links will be skipped. Only valid/supported links will be downloaded.", "Skipping", 0, 64)
+                    }
                 }
+                # --------------------------------------------------
+
+$script:State.PlaylistChoice = $null
+                $isBatch = ($linksToProcess.Count -gt 1)
+
+                # --- NEW CUSTOM PLAYLIST DIALOG FUNCTION ---
+                function Show-PlaylistDialog([string]$linkUrl) {
+                    $win = New-Object System.Windows.Window
+                    $win.Title = "Playlist Detected"
+                    $win.SizeToContent = "WidthAndHeight"; $win.WindowStartupLocation = "CenterScreen"
+                    $win.Background = $window.Resources["BgBrush"]; $win.ResizeMode = "NoResize"; $win.Topmost = $true
+                    
+                    $sp = New-Object System.Windows.Controls.StackPanel
+                    $sp.Margin = 20
+                    
+                    $tb = New-Object System.Windows.Controls.TextBlock
+                    $tb.TextWrapping = "Wrap"; $tb.MaxWidth = 450; $tb.Margin = "0,0,0,15"
+                    $tb.Foreground = $window.Resources["TextBrush"]
+                    $tb.Text = "A Playlist was detected in the batch with the following link:`n`n$linkUrl`n`nHow would you like to handle this for this or other playlists in the batch?"
+                    [void]$sp.Children.Add($tb)
+
+                    $btnSp = New-Object System.Windows.Controls.WrapPanel
+                    $btnSp.HorizontalAlignment = "Center"
+
+                    # Helper to cleanly generate the 5 buttons
+                    function Make-Btn($content, $bg) {
+                        $b = New-Object System.Windows.Controls.Button
+                        $b.Content = $content; $b.Height = 35; $b.Margin = "5"; $b.Padding = "12,0"
+                        $b.Background = $bg; $b.Foreground = "White"; $b.BorderThickness = 0; $b.Cursor = "Hand"
+                        return $b
+                    }
+
+                    # We change the visible text here, but keep the $script:plResult exact!
+                    $btnYes = Make-Btn "Yes (Download this playlist)" "#10B981"
+                    $btnYes.Add_Click({ $script:plResult = "Yes"; $win.Close() })
+                    
+                    $btnYesAll = Make-Btn "Yes to All (Download all playlists)" "#059669"
+                    $btnYesAll.Add_Click({ $script:plResult = "YesToAll"; $win.Close() })
+                    
+                    $btnNo = Make-Btn "No (Don't download this playlist)" "#F59E0B"
+                    $btnNo.Add_Click({ $script:plResult = "No"; $win.Close() })
+                    
+                    $btnNoAll = Make-Btn "No to All (Don't download any playlists)" "#D97706"
+                    $btnNoAll.Add_Click({ $script:plResult = "NoToAll"; $win.Close() })
+
+                    $btnCancel = Make-Btn "Cancel" "#EF4444"
+                    $btnCancel.Add_Click({ $script:plResult = "Cancel"; $win.Close() })
+
+                    [void]$btnSp.Children.Add($btnYes); [void]$btnSp.Children.Add($btnYesAll)
+                    [void]$btnSp.Children.Add($btnNo); [void]$btnSp.Children.Add($btnNoAll); [void]$btnSp.Children.Add($btnCancel)
+                    [void]$sp.Children.Add($btnSp)
+                    $win.Content = $sp
+
+                    $script:plResult = "Cancel"
+                    [void]$win.ShowDialog()
+                    return $script:plResult
+                }
+                # -------------------------------------------
+
+                # Iterate through all links and queue them up
+                foreach ($processLink in $linksToProcess) {
+                    
+                    # Validate against our pre-scan results to avoid spamming popups!
+                    if ([string]::IsNullOrWhiteSpace($processLink) -or $processLink -notmatch "^(https?://|www\.)") { continue }
+                    
+                    if ($batchIgnoreUnsupported -eq $false -and -not $validLinks.Contains($processLink)) {
+                        $LogBox.AppendText("[SKIP] Ignored unsupported link: $processLink`r`n")
+                        
+                        # Track skipped links for the batch overview
+                        if ($null -eq $script:State.YtDlpSkippedLinks) { $script:State.YtDlpSkippedLinks = @() }
+                        $script:State.YtDlpSkippedLinks += $processLink
+                        
+                        continue 
+                    }
+
+                    # Catch playlists gracefully and remember "To All" choices
+                    $playlistFlag = "--no-playlist"
+                    if ($processLink -match "list=") {
+                        if ($isBatch) {
+                            if ($script:State.PlaylistChoice -eq "YesToAll") {
+                                $playlistFlag = "--yes-playlist"
+                            }
+                            elseif ($script:State.PlaylistChoice -eq "NoToAll") {
+                                $playlistFlag = "--no-playlist"
+                            }
+                            else {
+                                $ans = Show-PlaylistDialog -linkUrl $processLink
+                                
+                                if ($ans -eq "Cancel") { 
+                                    $script:State.BatchQueue = @() # Wipes the queue instantly
+                                    $LogBox.AppendText("`r`n[CANCEL] Batch queue setup aborted by user.`r`n")
+                                    return # Stops processing the rest of the text file immediately
+                                }
+                                elseif ($ans -eq "YesToAll") {
+                                    $script:State.PlaylistChoice = "YesToAll"
+                                    $playlistFlag = "--yes-playlist"
+                                }
+                                elseif ($ans -eq "NoToAll") {
+                                    $script:State.PlaylistChoice = "NoToAll"
+                                    $playlistFlag = "--no-playlist"
+                                }
+                                elseif ($ans -eq "Yes") {
+                                    $playlistFlag = "--yes-playlist"
+                                }
+                            }
+                        }
+                        else {
+                            $ans = [System.Windows.MessageBox]::Show("A Playlist was detected in the following link:`n`n$processLink`n`nDo you want to download the FULL playlist?`n(Selecting 'No' will download just the single video)", "Playlist Detected", "YesNoCancel", "Question")
+                            
+                            if ($ans -eq "Cancel") { 
+                                $LogBox.AppendText("`r`n[CANCEL] Download setup aborted by user.`r`n")
+                                return 
+                            }
+                            
+                            $playlistFlag = if ($ans -eq "Yes") { "--yes-playlist" } else { "--no-playlist" }
+                        }
+                    }
+
+                    $jobStart = Get-Date
+                    $existing = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+                    try { foreach ($f in [System.IO.Directory]::EnumerateFiles($outDir)) { [void]$existing.Add($f) } } catch {}
+
+                    # Notice we pass $processLink here instead of leaving it empty
+                    $argsSafe = Get-YtDlpArgs -isPreview $false -ExcludeCustom $true -PlaylistFlag $playlistFlag -TargetLink $processLink
+                    if ($null -eq $argsSafe) { continue }
+
+                    $argsFull = Get-YtDlpArgs -isPreview $false -ExcludeCustom $false -PlaylistFlag $playlistFlag -TargetLink $processLink
+                    $hasCustom = [bool]($Y_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($Y_CustomParams.Text))
+
+                    $script:State.BatchQueue += @{ 
+                        Args            = $argsFull
+                        SafeArgs        = $argsSafe
+                        HasCustomParams = $hasCustom
+                        Retried         = $false
+                        IsYtDlp         = $true
+                        SelectedRes     = (Get-CbVal $Y_Res)
+                        OutputFile      = $null
+                        OutputDir       = $outDir
+                        JobStart        = $jobStart
+                        ExistingFiles   = $existing
+                        ActiveOutput    = $null
+                        ListBox         = $null
+                        ListItem        = $null 
+                    }
+                }
+
+                if ($script:State.BatchQueue.Count -eq 0) { return } # Stop if all links were cancelled/invalid
 
                 if (-not (Get-Variable -Name "Resolve-YtDlpActiveOutputForCurrentJob" -Scope Script -ErrorAction SilentlyContinue)) {
+                    
+                    function Get-YtDlpActiveOutputFile {
+                        param(
+                            [string]  $OutDir,
+                            [datetime]$StartTime,
+                            [string[]]$ExistingFiles
+                        )
+                        $candidates = Get-ChildItem -Path $OutDir -File -ErrorAction SilentlyContinue
+                        foreach ($f in $candidates) {
+                            if ($ExistingFiles.Contains($f.FullName)) { continue }
+
+                            $delta = ($f.LastWriteTime - $StartTime).TotalSeconds
+                            if ($delta -lt -5) { continue }
+
+                            if ($f.Name -match '.*\.[^\.]+(\.part)?$') {
+                                return $f
+                            }
+                        }
+                        return $null
+                    }
+
                     function Resolve-YtDlpActiveOutputForCurrentJob {
                         $idx = $script:State.CurrentJobIndex
                         if ($idx -lt 0 -or $idx -ge $script:State.BatchQueue.Count) { return }
@@ -3551,7 +3875,7 @@ try {
                     }
                     Set-Variable -Name "Resolve-YtDlpActiveOutputForCurrentJob" -Scope Script -Value (Get-Command Resolve-YtDlpActiveOutputForCurrentJob -CommandType Function)
                 }
-            }
+            }            
             # Direct parsing block for Tab: Specials (AI and Repair tools)
             elseif ($tabIndex -eq 5) {
                 if (-not $script:State.ffmpegFound) { [void][System.Windows.MessageBox]::Show("FFmpeg not found!", "Missing Tool", 0, 48); return }
@@ -4114,44 +4438,48 @@ try {
 
     # Terminates queue safely and clears uncompleted outputs to avoid data leaks
     $BtnCancel.Add_Click({
+        try {
             $BtnCancel.IsEnabled = $false
             $BtnSkip.IsEnabled = $false
-        
-            if ($script:State.CurrentJobIndex -lt $script:State.BatchQueue.Count) {
+            $LogBox.AppendText("`r`n[CANCEL] User requested to cancel the queue. Aborting...`r`n")
+            if ($CbAutoScrollLog.IsChecked) { $LogBox.ScrollToEnd() }
 
+            $currentJob = $null
+            if ($script:State.CurrentJobIndex -lt $script:State.BatchQueue.Count) {
+                # Preserve the active job in the queue so the exit handler cleans it up safely
                 $currentJob = $script:State.BatchQueue[$script:State.CurrentJobIndex]
                 $script:State.BatchQueue = @($currentJob)
                 $script:State.CurrentJobIndex = 0
-            
-                # Cleanly kill the active CMD wrapper and all its specific child processes (including Python/FFmpeg)
-                Kill-ProcessTree $script:State.p
-            
-                if ($currentJob.IsYtDlp) {
-                    $outDir = $currentJob.OutputDir
-                    if (Test-Path $outDir) {
-                        Get-ChildItem -Path $outDir -File | Where-Object {
-                            ($_.Extension -eq ".part" -or $_.Extension -eq ".jpg" -or $_.Extension -eq ".webp" -or $_.Name -match "\.temp$") -and
-                            $_.LastWriteTime -ge $currentJob.JobStart
-                        } | ForEach-Object {
-                            Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
-                        }
-                    }
-                }
-                $LogBox.AppendText("`r`n[CANCEL] User requested to cancel the queue. Aborting...`r`n")
-            }
-            else {
-                Kill-ProcessTree $script:State.p
+            } else {
                 $script:State.BatchQueue = @()
-                $script:State.CurrentJobIndex = 0
-                $BtnRun.IsEnabled = $true
-                $BtnUpdate.IsEnabled = $true
-                $TaskbarProgress.ProgressState = "None"
-                $StatusText.Text = "Process cancelled."
-                $StatusText.Foreground = "#EF4444"
             }
-        
+
+            # Send kill signal instantly
+            if ($script:State.p) { 
+                Kill-ProcessTree $script:State.p 
+            } else {
+                # Force UI reset if no process is currently bound
+                $script:State.CurrentJobIndex = 1
+                [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ Process-NextJob })
+            }
+
+            # Run file cleanup completely asynchronously so we never freeze the UI button
+            if ($currentJob -and $currentJob.IsYtDlp -and (Test-Path -LiteralPath $currentJob.OutputDir)) {
+                $outDir = $currentJob.OutputDir
+                $jStart = $currentJob.JobStart
+                [void][System.Threading.Tasks.Task]::Run([Action] {
+                    Start-Sleep -Seconds 1 # Give yt-dlp a second to let go of the file lock
+                    Get-ChildItem -LiteralPath $outDir -File | Where-Object {
+                        ($_.Extension -match "\.part$|\.ytdl$|\.temp$|\.jpg$|\.webp$") -and $_.LastWriteTime -ge $jStart
+                    } | ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+                })
+            }
+
             if (Test-Path $QueueFile) { Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue }
-        })
+        } catch {
+            $LogBox.AppendText("`r`n[ERROR] Failed to cancel gracefully: $($_.Exception.Message)`r`n")
+        }
+    })
 
     # Aborts current process but allows the loop to trigger the next file in array
     $BtnSkip.Add_Click({
@@ -4163,18 +4491,21 @@ try {
 
     # Ensure application cleanly terminates child processes, saves queue, and wipes temp files
     $window.Add_Closing({ 
-        Kill-ProcessTree $script:State.p
-        Save-Queue 
+            Kill-ProcessTree $script:State.p
+            Save-Queue 
         
-        # Clean up temporary logs and thumbnails to prevent disk bloat
-        @("mcp_live.log", "mcp_live_err.log", "yt_info.json", "yt_info_err.log", "whisper_update.log") | ForEach-Object {
-            $f = Join-Path $env:TEMP $_
-            if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
-        }
+            # Clean up temporary logs and thumbnails to prevent disk bloat
+            @("mcp_live.log", "mcp_live_err.log", "yt_info.json", "yt_info_err.log", "whisper_update.log") | ForEach-Object {
+                $f = Join-Path $env:TEMP $_
+                if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+            }
         
-        # Sweep all dynamically generated preview thumbnails
-        Get-ChildItem -Path $env:TEMP -Filter "thumb_*.jpg" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-    })
+            # Sweep all dynamically generated preview thumbnails
+            Get-ChildItem -Path $env:TEMP -Filter "thumb_*.jpg" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+        
+            # Kill System Tray icon to prevent "ghost" icons from lingering
+            if ($script:TrayIcon) { $script:TrayIcon.Dispose() }
+        })
     [void]$window.ShowDialog()
 }
 catch {
