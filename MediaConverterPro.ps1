@@ -1390,12 +1390,11 @@ try {
                     }
 
                     # 4. Safe UI Initialization for ALL "Special" Tab Browse Buttons
-                    if ($null -ne $S_BtnVisAud) { $S_BtnVisAud.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.flac;*.ogg|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_VisAudio.Text = $fd.FileName } }) }
-                    if ($null -ne $S_BtnVisImg) { $S_BtnVisImg.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Images|*.jpg;*.png;*.jpeg|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_VisImg.Text = $fd.FileName } }) }
-                    if ($null -ne $S_BtnStabIn) { $S_BtnStabIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Video|*.mp4;*.mkv;*.mov;*.avi|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_StabIn.Text = $fd.FileName } }) }
-                    if ($null -ne $S_BtnScribeIn) { $S_BtnScribeIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Media Files|*.mp4;*.mkv;*.mp3;*.wav;*.m4a;*.ogg;*.flac|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_ScribeIn.Text = $fd.FileName } }) }
-                    if ($null -ne $S_BtnUpscaleIn) { $S_BtnUpscaleIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Images|*.jpg;*.png;*.jpeg;*.webp|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_UpscaleIn.Text = $fd.FileName } }) }
-
+                    if ($null -ne $S_BtnVisAud) { $S_BtnVisAud.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.InitialDirectory = $ScriptDir; $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.flac;*.ogg|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_VisAudio.Text = $fd.FileName } }) }
+                    if ($null -ne $S_BtnVisImg) { $S_BtnVisImg.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.InitialDirectory = $ScriptDir; $fd.Filter = "Images|*.jpg;*.png;*.jpeg|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_VisImg.Text = $fd.FileName } }) }
+                    if ($null -ne $S_BtnStabIn) { $S_BtnStabIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.InitialDirectory = $ScriptDir; $fd.Filter = "Video|*.mp4;*.mkv;*.mov;*.avi|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_StabIn.Text = $fd.FileName } }) }
+                    if ($null -ne $S_BtnScribeIn) { $S_BtnScribeIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.InitialDirectory = $ScriptDir; $fd.Filter = "Media Files|*.mp4;*.mkv;*.mp3;*.wav;*.m4a;*.ogg;*.flac|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_ScribeIn.Text = $fd.FileName } }) }
+                    if ($null -ne $S_BtnUpscaleIn) { $S_BtnUpscaleIn.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.InitialDirectory = $ScriptDir; $fd.Filter = "Images|*.jpg;*.png;*.jpeg;*.webp|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $S_UpscaleIn.Text = $fd.FileName } }) }
                     # 5. Attempt to recover crashed/incomplete queues from the last run
                     if (Test-Path $QueueFile) {
                         $ans = [System.Windows.MessageBox]::Show("Unfinished jobs were found from a previous session.`n`nWould you like to resume processing them?", "Resume Queue", "YesNo", 32)
@@ -2288,9 +2287,10 @@ try {
             $setWin.FindName("ChkAutoDelete").IsChecked = $Config.AutoDelete
 
             $setWin.FindName("BtnBrowseOutDir").Add_Click({ 
-                    $fb = New-Object System.Windows.Forms.FolderBrowserDialog
-                    if ($fb.ShowDialog() -eq "OK") { $setWin.FindName("TxtDefaultOutDir").Text = $fb.SelectedPath } 
-                })
+                $fb = New-Object System.Windows.Forms.FolderBrowserDialog
+                $fb.SelectedPath = $ScriptDir # Add this line
+                if ($fb.ShowDialog() -eq "OK") { $setWin.FindName("TxtDefaultOutDir").Text = $fb.SelectedPath } 
+            })
 
             $setWin.FindName("BtnSaveSet").Add_Click({
                     $Config.Theme = (Get-CbVal $cboTheme)
@@ -2357,30 +2357,38 @@ try {
         $existingItems = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($item in $List.Items) { [void]$existingItems.Add($item.ToString()) }
 
+        $videoDetected = $false
+
         foreach ($p in $Paths) {
             $pStr = [string]$p
             if ([System.IO.Directory]::Exists($pStr)) { 
                 try {
                     $files = [System.IO.Directory]::GetFiles($pStr, "*.*", [System.IO.SearchOption]::TopDirectoryOnly)
                     foreach ($f in $files) {
-                        # (?i) forces case-insensitive regex matching for extensions like .MP4
                         if ($f -match "(?i)$ExtRegex" -and $existingItems.Add($f)) { 
                             [void]$List.Items.Add($f)
+                            if ($List.Name -eq "A_InList" -and $f -match "\.(mp4|mkv|avi|mov|webm)$") { $videoDetected = $true }
                         }
                     }
                 }
                 catch {
-                    Write-CrashLog "Could not read directory $pStr during drag-and-drop: $($_.Exception.Message)"
-                    $LogBox.AppendText("`r`n[WARNING] Skipped restricted or unreadable folder: $pStr`r`n")
+                    $LogBox.AppendText("`r`n[WARNING] Skipped restricted folder: $pStr`r`n")
                 }
             } 
             elseif ([System.IO.File]::Exists($pStr)) { 
                 if ($pStr -match "(?i)$ExtRegex" -and $existingItems.Add($pStr)) { 
                     [void]$List.Items.Add($pStr) 
+                    if ($List.Name -eq "A_InList" -and $pStr -match "\.(mp4|mkv|avi|mov|webm)$") { $videoDetected = $true }
                 } 
             }
         }
         
+        # If we are on the Audio tab and videos were added, auto-check the box
+        if ($videoDetected -and $List.Name -eq "A_InList" -and -not $A_CheckExtract.IsChecked) {
+            $A_CheckExtract.IsChecked = $true
+            [void][System.Windows.MessageBox]::Show("You added one or more video files to the Audio tab.`n`n'Extract Audio from Video' has been automatically checked for you.", "Video Detected", 0, 64)
+        }
+
         if ($List.Items.Count -gt 0 -and $List.SelectedIndex -eq -1) { $List.SelectedIndex = 0 }
         Update-AllPreviews
     }
@@ -2426,7 +2434,8 @@ try {
             })
     }
 
-    Setup-DragReorder $A_InList "" { if ($A_CheckExtract.IsChecked) { "\.(mp3|wav|m4a|flac|ogg|aac|mp4|mkv|avi|mov|webm)$" } else { "\.(mp3|wav|m4a|flac|ogg|aac)$" } }
+    # Always allow both audio and video formats to be dropped into the Audio list
+    Setup-DragReorder $A_InList "\.(mp3|wav|m4a|flac|ogg|aac|mp4|mkv|avi|mov|webm)$" $null
     Setup-DragReorder $V_InList "\.(mp4|mkv|avi|mov|webm)$" $null
     Setup-DragReorder $I_InList "\.(jpg|jpeg|png|webp|bmp|gif|heic)$" $null
 
@@ -2459,57 +2468,77 @@ try {
     Bind-ContextMenu $V_InList $V_CtxRemove $V_CtxClear
     Bind-ContextMenu $I_InList $I_CtxRemove $I_CtxClear
 
-    # Manual Add File Click handlers utilizing Windows Forms OpenFileDialog
+# Manual Add File Click handlers utilizing Windows Forms OpenFileDialog
     $A_BtnAdd.Add_Click({ 
-            $fd = New-Object System.Windows.Forms.OpenFileDialog
-            $fd.Multiselect = $true
-            if ($A_CheckExtract.IsChecked) {
-                $fd.Filter = "Audio & Video|*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4;*.mkv;*.avi;*.mov;*.webm|All|*.*"
-            }
-            else {
-                $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac|All|*.*"
-            }
-            if ($fd.ShowDialog() -eq "OK") { Add-ToList $A_InList $fd.FileNames ".*" } 
-        })
-    $V_BtnAdd.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Multiselect = $true; $fd.Filter = "Video|*.mp4;*.mkv;*.avi;*.mov;*.webm|All|*.*"; if ($fd.ShowDialog() -eq "OK") { Add-ToList $V_InList $fd.FileNames ".*" } })
-    $I_BtnAdd.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Multiselect = $true; $fd.Filter = "Images|*.jpg;*.jpeg;*.png;*.webp;*.bmp;*.gif;*.heic|All|*.*"; if ($fd.ShowDialog() -eq "OK") { Add-ToList $I_InList $fd.FileNames ".*" } })
-    
+        $fd = New-Object System.Windows.Forms.OpenFileDialog
+        $fd.InitialDirectory = $ScriptDir
+        $fd.Multiselect = $true
+        $fd.Filter = "Media Files|*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.mp4;*.mkv;*.avi;*.mov;*.webm|All Files|*.*"
+        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Add-ToList $A_InList $fd.FileNames ".*" } 
+    })
+
+    $V_BtnAdd.Add_Click({ 
+        $fd = New-Object System.Windows.Forms.OpenFileDialog
+        $fd.InitialDirectory = $ScriptDir
+        $fd.Multiselect = $true
+        $fd.Filter = "Video|*.mp4;*.mkv;*.avi;*.mov;*.webm|All|*.*"
+        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Add-ToList $V_InList $fd.FileNames ".*" } 
+    })
+
+    $I_BtnAdd.Add_Click({ 
+        $fd = New-Object System.Windows.Forms.OpenFileDialog
+        $fd.InitialDirectory = $ScriptDir
+        $fd.Multiselect = $true
+        $fd.Filter = "Images|*.jpg;*.jpeg;*.png;*.webp;*.bmp;*.gif;*.heic|All|*.*"
+        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Add-ToList $I_InList $fd.FileNames ".*" } 
+    })    
+
     $A_BtnClear.Add_Click({ $A_InList.Items.Clear(); Update-AudioFfmpegPreview })
     $V_BtnClear.Add_Click({ $V_InList.Items.Clear(); Update-FfmpegPreview })
     $I_BtnClear.Add_Click({ $I_InList.Items.Clear() })
 
     # Helper function for assigning an Output Directory
     function Pick-OutDir([System.Windows.Controls.TextBox]$Box) {
-        $fb = New-Object System.Windows.Forms.FolderBrowserDialog; if ($fb.ShowDialog() -eq "OK") { $Box.Text = $fb.SelectedPath; Update-AllPreviews } 
+        $fb = New-Object System.Windows.Forms.FolderBrowserDialog
+        $fb.SelectedPath = $ScriptDir # Start explorer in script directory
+        if ($fb.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $Box.Text = $fb.SelectedPath; Update-AllPreviews } 
     }
-    $A_BtnOut.Add_Click({ Pick-OutDir $A_OutDir }); $V_BtnOut.Add_Click({ Pick-OutDir $V_OutDir }); $I_BtnOut.Add_Click({ Pick-OutDir $I_OutDir }); $Y_BtnOut.Add_Click({ Pick-OutDir $Y_OutDir })
-    $S_BtnUpscaleOut.Add_Click({ Pick-OutDir $S_UpscaleOutDir 
-        })
 
-    $M_BtnVid.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Video|*.mp4;*.mkv;*.avi;*.webm|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $M_InVideo.Text = $fd.FileName } })
-    $M_BtnAud.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.aac|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $M_InAudio.Text = $fd.FileName } })
-    $M_BtnOut.Add_Click({ $sd = New-Object System.Windows.Forms.SaveFileDialog; $sd.Filter = "MP4 Video|*.mp4|MKV Video|*.mkv"; if ($sd.ShowDialog() -eq "OK") { $M_OutFile.Text = $sd.FileName } })
+    $A_BtnOut.Add_Click({ Pick-OutDir $A_OutDir })
+    $V_BtnOut.Add_Click({ Pick-OutDir $V_OutDir })
+    $I_BtnOut.Add_Click({ Pick-OutDir $I_OutDir })
+    $Y_BtnOut.Add_Click({ Pick-OutDir $Y_OutDir })
+    $S_BtnUpscaleOut.Add_Click({ Pick-OutDir $S_UpscaleOutDir })
+
+    # Muxing and Downloader Browsers
+    $M_BtnVid.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.InitialDirectory = $ScriptDir; $fd.Filter = "Video|*.mp4;*.mkv;*.avi;*.webm|All|*.*"; if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $M_InVideo.Text = $fd.FileName } })
+    $M_BtnAud.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.InitialDirectory = $ScriptDir; $fd.Filter = "Audio|*.mp3;*.wav;*.m4a;*.aac|All|*.*"; if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $M_InAudio.Text = $fd.FileName } })
+    $M_BtnOut.Add_Click({ $sd = New-Object System.Windows.Forms.SaveFileDialog; $sd.InitialDirectory = $ScriptDir; $sd.Filter = "MP4 Video|*.mp4|MKV Video|*.mkv"; if ($sd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $M_OutFile.Text = $sd.FileName } })
 
     $Y_BtnCookie.Add_Click({
-            $fd = New-Object System.Windows.Forms.OpenFileDialog
-            $fd.Filter = "Text Files|*.txt|All Files|*.*"
-            $fd.Title = "Select cookies.txt"
-            if ($fd.ShowDialog() -eq "OK") {
-                $Y_CookiePath.Text = $fd.FileName
-                $Y_CheckCookie.IsChecked = $true
-            }
-        })
-    # --- ADDED: Batch File Browser Button ---
+        $fd = New-Object System.Windows.Forms.OpenFileDialog
+        $fd.InitialDirectory = $ScriptDir
+        $fd.Filter = "Text Files|*.txt|All Files|*.*"
+        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $Y_CookiePath.Text = $fd.FileName
+            $Y_CheckCookie.IsChecked = $true
+        }
+    })
+
     $Y_BtnBatchBrowse.Add_Click({
         $fd = New-Object System.Windows.Forms.OpenFileDialog
+        $fd.InitialDirectory = $ScriptDir
         $fd.Filter = "Text Files (*.txt)|*.txt|All Files|*.*"
-        $fd.Title = "Select Batch Download List"
-        if ($fd.ShowDialog() -eq "OK") { $Y_BatchFile.Text = $fd.FileName }
+        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $Y_BatchFile.Text = $fd.FileName }
     })
-    # ----------------------------------------
 
-    $V_BtnSub.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.Filter = "Subtitles|*.srt|All|*.*"; if ($fd.ShowDialog() -eq "OK") { $V_SubPath.Text = $fd.FileName } })
-    
+    $V_BtnSub.Add_Click({ 
+        $fd = New-Object System.Windows.Forms.OpenFileDialog
+        $fd.InitialDirectory = $ScriptDir
+        $fd.Filter = "Subtitles|*.srt|All|*.*"
+        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $V_SubPath.Text = $fd.FileName } 
+    })
+        
     # REWRITTEN: Fast synchronous timeline generation with UI pumping (No Background Threads!)
     $V_BtnGenPreview.Add_Click({
             $file = $V_InList.SelectedItem
@@ -2632,8 +2661,9 @@ try {
         })
 
     # Execute ffprobe to retrieve JSON metadata for the currently selected file and display in a popup window
+# Execute ffprobe to retrieve JSON metadata and display in a popup window
     function Show-MediaInfoDialog([string]$FilePath, [System.Windows.Controls.Button]$Btn) {
-        if (-not $FilePath -or -not (Test-Path $FilePath)) { [void][System.Windows.MessageBox]::Show("Please select a file from the list.", "Info", 0, 48); return }
+        if (-not $FilePath -or -not (Test-Path -LiteralPath $FilePath)) { [void][System.Windows.MessageBox]::Show("Please select a valid file.", "Info", 0, 48); return }
         
         $Btn.IsEnabled = $false
         $window.Cursor = [System.Windows.Input.Cursors]::Wait
@@ -2641,26 +2671,47 @@ try {
         
         try {
             $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+            $pinfo.FileName = if ($script:State.ffprobeFound) { $script:State.ffprobe } else { $script:State.ffmpeg }
+            
+            # FIX 1: Use the -f format operator to prevent PowerShell from expanding $ characters in the path
             if ($script:State.ffprobeFound) { 
-                $pinfo.FileName = $script:State.ffprobe
-                $pinfo.Arguments = "-v quiet -print_format json -show_format -show_streams `"$FilePath`"" 
+                $pinfo.Arguments = '-v quiet -print_format json -show_format -show_streams "{0}"' -f $FilePath
+            } else {
+                $pinfo.Arguments = '-hide_banner -i "{0}"' -f $FilePath
             }
-            else { 
-                $pinfo.FileName = $script:State.ffmpeg
-                $pinfo.Arguments = "-hide_banner -i `"$FilePath`"" 
-            }
-            $pinfo.UseShellExecute = $false; $pinfo.RedirectStandardError = $true; $pinfo.RedirectStandardOutput = $true; $pinfo.CreateNoWindow = $true
+
+            $pinfo.UseShellExecute = $false
+            $pinfo.RedirectStandardError = $true
+            $pinfo.RedirectStandardOutput = $true
+            $pinfo.CreateNoWindow = $true
             
             $p = [System.Diagnostics.Process]::Start($pinfo)
-            $p.WaitForExit()
             
-            $infoText = if ($script:State.ffprobeFound) { $p.StandardOutput.ReadToEnd() } else { $p.StandardError.ReadToEnd() }
+            # FIX 2: Read streams BEFORE waiting for exit to prevent buffer deadlocks
+            $stdOutTask = $p.StandardOutput.ReadToEndAsync()
+            $stdErrTask = $p.StandardError.ReadToEndAsync()
+            
+            # Wait for the tool to finish with a 10-second safety timeout
+            if (-not $p.WaitForExit(10000)) {
+                try { $p.Kill() } catch {}
+                $infoText = "Error: Tool timed out while reading file metadata."
+            } else {
+                $infoText = if ($script:State.ffprobeFound) { $stdOutTask.Result } else { $stdErrTask.Result }
+            }
+
+            if ([string]::IsNullOrWhiteSpace($infoText)) { 
+                $infoText = "No metadata could be extracted.`n`nError Output:`n$($stdErrTask.Result)" 
+            }
+        }
+        catch {
+            $infoText = "Fatal error during info retrieval: $($_.Exception.Message)"
         }
         finally {
             $window.Cursor = [System.Windows.Input.Cursors]::Arrow
             $Btn.IsEnabled = $true
         }
         
+        # --- UI Window Generation (Keep this as is) ---
         [xml]$infoXaml = @"
         <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Title="Media Information" Width="650" Height="500" WindowStartupLocation="CenterScreen">
             <Grid Margin="15"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -2670,7 +2721,6 @@ try {
         </Window>
 "@
         $infoWindow = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $infoXaml))
-        
         $infoWindow.Background = $window.Resources["BgBrush"]
         $infoWindow.FindName("InfoLabel").Foreground = $window.Resources["TextBrush"]
         $tb = $infoWindow.FindName("InfoTextBox")
@@ -3561,13 +3611,13 @@ try {
                     $lines = Get-Content -LiteralPath $batchPath
                     foreach ($line in $lines) {
                         $l = $line.Trim()
-                        if (-not [string]::IsNullOrWhiteSpace($l) -and $l -notmatch "^#") {
+                        if (-not [string]::IsNullOrWhiteSpace($l) -and $l -notmatch "^#" -and $l -match "^(https?://|www\.)") {
                             $linksToProcess.Add($l)
                         }
                     }
                     
                     if ($linksToProcess.Count -eq 0) {
-                        [void][System.Windows.MessageBox]::Show("No valid links found in the text file.", "Empty File", 0, 48)
+                        [void][System.Windows.MessageBox]::Show("No valid https:// links found in the text file.", "Empty File", 0, 48)
                         return
                     }
                 }
