@@ -669,15 +669,31 @@ try {
                                             <StackPanel Grid.Row="0" Margin="10"><TextBlock Text="Container Format" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CFormat" SelectedIndex="1"><ComboBoxItem>MP4</ComboBoxItem><ComboBoxItem>MKV</ComboBoxItem><ComboBoxItem>AVI</ComboBoxItem><ComboBoxItem>WEBM</ComboBoxItem><ComboBoxItem>GIF</ComboBoxItem></ComboBox></StackPanel>
                                             <StackPanel Grid.Row="0" Grid.Column="1" Margin="10"><TextBlock Text="Hardware Acceleration" FontSize="13" Foreground="#10B981" FontWeight="Bold" Margin="0,0,0,5"/><ComboBox x:Name="V_CHWAccel" SelectedIndex="0"><ComboBoxItem>CPU (x264/x265/AV1)</ComboBoxItem><ComboBoxItem>NVIDIA GPU (NVENC)</ComboBoxItem><ComboBoxItem>AMD GPU (AMF)</ComboBoxItem><ComboBoxItem>Intel GPU (QSV)</ComboBoxItem></ComboBox></StackPanel>
 
-                                            <StackPanel Grid.Row="1" Margin="10"><TextBlock Text="Video Codec" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                <ComboBox x:Name="V_CCodec" SelectedIndex="0">
-                                                    <ComboBoxItem>H.264 (AVC)</ComboBoxItem>
-                                                    <ComboBoxItem>H.265 (HEVC)</ComboBoxItem>
-                                                    <ComboBoxItem>AV1 (Next-Gen)</ComboBoxItem>
-                                                    <ComboBoxItem>Copy (No Re-encoding)</ComboBoxItem>
-                                                </ComboBox>
-                                            </StackPanel>
-                                            <StackPanel Grid.Row="1" Grid.Column="1" Margin="10"><TextBlock Text="Audio Codec" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CAudio" SelectedIndex="0"><ComboBoxItem>AAC</ComboBoxItem><ComboBoxItem>AC3 (Dolby)</ComboBoxItem><ComboBoxItem>Copy</ComboBoxItem></ComboBox></StackPanel>
+                                            <Grid Grid.Row="1">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <StackPanel Margin="10,0,5,0"><TextBlock Text="Video Codec" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <ComboBox x:Name="V_CCodec" SelectedIndex="0" ToolTip="Select 'Copy' to keep original video untouched.">
+                                                        <ComboBoxItem>H.264 (AVC)</ComboBoxItem>
+                                                        <ComboBoxItem>H.265 (HEVC)</ComboBoxItem>
+                                                        <ComboBoxItem>AV1 (Next-Gen)</ComboBoxItem>
+                                                        <ComboBoxItem>Copy Video</ComboBoxItem>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Margin="5,0,5,0"><TextBlock Text="Audio Codec" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <ComboBox x:Name="V_CAudio" SelectedIndex="0" ToolTip="Select 'Copy' to keep original audio untouched.">
+                                                        <ComboBoxItem>AAC</ComboBoxItem>
+                                                        <ComboBoxItem>AC3 (Dolby)</ComboBoxItem>
+                                                        <ComboBoxItem>EAC3 (Dolby+)</ComboBoxItem>
+                                                        <ComboBoxItem>Copy Audio</ComboBoxItem>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" Margin="5,0,10,0"><TextBlock Text="Subtitles" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <ComboBox x:Name="V_CSub" SelectedIndex="0" ToolTip="Choose how to handle existing subtitles.">
+                                                        <ComboBoxItem>Remove Subs</ComboBoxItem>
+                                                        <ComboBoxItem>Copy All Subs</ComboBoxItem>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                            </Grid>
                                         </Grid>
                                     </StackPanel>
                                 </Border>
@@ -1184,7 +1200,7 @@ try {
         "MainTabs", "BtnRun", "BtnShow", "BtnSettings", "BtnUpdate", "BtnCancel", "BtnSkip", "BtnReset", "StatusText", "TxtETA", "PBar", "LogBox", "CbAutoScrollLog", "TxtSubtitle",
         "TabAudio", "TabVideo", "TabImage", "TabMuxing", "TabDownload", "ExpLog",
         "A_InList", "A_OutDir", "A_BtnAdd", "A_BtnClear", "A_BtnInfo", "A_BtnOut", "A_CFormat", "A_CQual", "A_CChan", "A_CMeta", "A_CheckNorm", "A_TrimStart", "A_TrimEnd", "A_SliderTrimStart", "A_SliderTrimEnd", "A_CheckExtract", "A_CtxRemove", "A_CtxClear", "A_CheckCustomParams", "A_CustomParamsPanel", "A_ParamsPreview", "A_CustomParams",
-        "V_InList", "V_OutDir", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderTrimStart", "V_SliderTrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
+        "V_InList", "V_OutDir", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CSub", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderTrimStart", "V_SliderTrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
         "I_InList", "I_OutDir", "I_BtnAdd", "I_BtnClear", "I_BtnInfo", "I_BtnOut", "I_CFormat", "I_CQual", "I_CRes", "I_CheckMeta", "I_CtxRemove", "I_CtxClear",
         "M_InVideo", "M_InAudio", "M_OutFile", "M_BtnVid", "M_BtnAud", "M_BtnOut",
         "Y_InputTabs", "Y_BatchFile", "Y_BtnBatchBrowse", "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
@@ -1654,7 +1670,9 @@ try {
         }
 
         $aCodecCb = (Get-CbVal $V_CAudio); $aCodec = "aac"
-        if ($aCodecCb -match "Copy") { $aCodec = "copy" } elseif ($aCodecCb -match "AC3") { $aCodec = "ac3" }
+        if ($aCodecCb -match "Copy") { $aCodec = "copy" } 
+        elseif ($aCodecCb -match "EAC3") { $aCodec = "eac3" } 
+        elseif ($aCodecCb -match "AC3") { $aCodec = "ac3" }
 
         # GIF Optimization: Force gif codec, drop audio, reduce framerate, and use RAM-safe palette generation
         if ($outFile -match "(?i)\.gif$") {
@@ -1671,12 +1689,28 @@ try {
             if ($aCodec -ne "copy" -and $af.Count -gt 0) { $argList.AddRange([string[]]@("-af", ($af -join ","))) }
         }
 
-        # Audio Track mappings based on sync requirements
+        # Subtitle Handling Logic
+        $subCb = Get-CbVal $V_CSub
+        $mapSubs = if ($subCb -match "Copy All Subs") { $true } else { $false }
+        if ($mapSubs) { $argList.AddRange([string[]]@("-c:s", "copy")) }
+
+        # Audio and Subtitle Track mappings based on sync requirements
         if ($useDualInput) {
-            if ($V_CAudioTracks.SelectedIndex -eq 1) { $argList.AddRange([string[]]@("-map", "0:v", "-map", "1:a?", "-map", "0:s?")) } else { $argList.AddRange([string[]]@("-map", "0:v:0", "-map", "1:a:0")) }
+            if ($V_CAudioTracks.SelectedIndex -eq 1) { 
+                $argList.AddRange([string[]]@("-map", "0:v", "-map", "1:a?"))
+                if ($mapSubs) { $argList.AddRange([string[]]@("-map", "0:s?")) }
+            } else { 
+                $argList.AddRange([string[]]@("-map", "0:v:0", "-map", "1:a:0"))
+                if ($mapSubs) { $argList.AddRange([string[]]@("-map", "0:s:0?")) }
+            }
         }
         else {
-            if ($V_CAudioTracks.SelectedIndex -eq 1) { $argList.AddRange([string[]]@("-map", "0")) } else { $argList.AddRange([string[]]@("-map", "0:v:0", "-map", "0:a:0?")) }
+            if ($V_CAudioTracks.SelectedIndex -eq 1) { 
+                $argList.AddRange([string[]]@("-map", "0")) 
+            } else { 
+                $argList.AddRange([string[]]@("-map", "0:v:0", "-map", "0:a:0?"))
+                if ($mapSubs) { $argList.AddRange([string[]]@("-map", "0:s?")) }
+            }
         }
 
         # Target Size or CRF Video Compression Bitrate logic
@@ -1858,7 +1892,7 @@ try {
     # Map settings changes to preview updates for the Video Tab
     $V_CheckCustomParams.Add_Checked({ $V_CustomParamsPanel.Visibility = "Visible"; Update-FfmpegPreview })
     $V_CheckCustomParams.Add_Unchecked({ $V_CustomParamsPanel.Visibility = "Collapsed"; $V_CustomParams.Clear(); Update-FfmpegPreview })
-    foreach ($ctrl in @($V_CFormat, $V_CHWAccel, $V_CCodec, $V_CAudio, $V_CRes, $V_CFPS, $V_CAudioTracks, $V_CVol, $V_CSpeed)) {
+    foreach ($ctrl in @($V_CFormat, $V_CHWAccel, $V_CCodec, $V_CAudio, $V_CSub, $V_CRes, $V_CFPS, $V_CAudioTracks, $V_CVol, $V_CSpeed)) {
         $ctrl.Add_SelectionChanged({ Update-FfmpegPreview })
     }
     $V_CustomParams.Add_TextChanged({ Update-FfmpegPreview })
@@ -4447,6 +4481,7 @@ $script:State.PlaylistChoice = $null
             
             if ($null -ne $V_CFormat) { $V_CFormat.SelectedIndex = 1 }
             if ($null -ne $V_CCodec) { $V_CCodec.SelectedIndex = 0 }
+            if ($null -ne $V_CSub) { $V_CSub.SelectedIndex = 0 }
             if ($null -ne $V_CRes) { $V_CRes.SelectedIndex = 0 }
             if ($null -ne $V_Preset) { $V_Preset.SelectedIndex = 0 }
             if ($null -ne $V_CFPS) { $V_CFPS.SelectedIndex = 0 }
