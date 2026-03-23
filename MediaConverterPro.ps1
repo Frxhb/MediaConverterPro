@@ -140,6 +140,8 @@ try {
         tempLogErr          = Join-Path $env:TEMP "mcp_live_err.log"
         lastLogPos          = 0
         SupportedSitesCache = $null
+        CustomFilenames     = @{}
+        IsAutoUpdatingFilename = $false
     }
 
     # Function to locate all required third-party tools on the host system
@@ -638,8 +640,11 @@ try {
                                 </Grid>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
-                                    <TextBox x:Name="V_OutDir" ToolTip="The folder where processed files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow"/>
-                                    <Button x:Name="V_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <TextBox x:Name="V_OutDir" Grid.Row="0" ToolTip="The folder where processed files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow" Margin="0,0,0,10" Height="40"/>
+                                    <Button x:Name="V_BtnOut" Grid.Row="0" Grid.Column="1" Content="Select Folder" Margin="10,0,0,10" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    <TextBox x:Name="V_OutFilename" Grid.Row="1" Grid.Column="0" ToolTip="Edit the final filename for the selected item" Text="Output Filename..." Cursor="IBeam" Height="40"/>
+                                    <CheckBox x:Name="V_CheckSmartName" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Content="Auto-Update Name" IsChecked="True" VerticalAlignment="Center" Margin="10,0,0,0" ToolTip="Automatically replace audio/video tags in filename (e.g. dtshd to eac3)" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -1200,7 +1205,7 @@ try {
         "MainTabs", "BtnRun", "BtnShow", "BtnSettings", "BtnUpdate", "BtnCancel", "BtnSkip", "BtnReset", "StatusText", "TxtETA", "PBar", "LogBox", "CbAutoScrollLog", "TxtSubtitle",
         "TabAudio", "TabVideo", "TabImage", "TabMuxing", "TabDownload", "ExpLog",
         "A_InList", "A_OutDir", "A_BtnAdd", "A_BtnClear", "A_BtnInfo", "A_BtnOut", "A_CFormat", "A_CQual", "A_CChan", "A_CMeta", "A_CheckNorm", "A_TrimStart", "A_TrimEnd", "A_SliderTrimStart", "A_SliderTrimEnd", "A_CheckExtract", "A_CtxRemove", "A_CtxClear", "A_CheckCustomParams", "A_CustomParamsPanel", "A_ParamsPreview", "A_CustomParams",
-        "V_InList", "V_OutDir", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CSub", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderTrimStart", "V_SliderTrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
+        "V_InList", "V_OutDir", "V_OutFilename", "V_CheckSmartName", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CSub", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderTrimStart", "V_SliderTrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
         "I_InList", "I_OutDir", "I_BtnAdd", "I_BtnClear", "I_BtnInfo", "I_BtnOut", "I_CFormat", "I_CQual", "I_CRes", "I_CheckMeta", "I_CtxRemove", "I_CtxClear",
         "M_InVideo", "M_InAudio", "M_OutFile", "M_BtnVid", "M_BtnAud", "M_BtnOut",
         "Y_InputTabs", "Y_BatchFile", "Y_BtnBatchBrowse", "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
@@ -1751,17 +1756,51 @@ try {
         return @{ Args = $argList.ToArray(); UseDual = $useDualInput }
     }
 
+    # Smart Filename Generator
+    function Get-SmartVideoFilename([string]$inFile) {
+        if ([string]::IsNullOrWhiteSpace($inFile) -or $inFile -eq "C:\input_video.mp4") { return "output_video" }
+        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($inFile)
+        if ($script:State.CustomFilenames.ContainsKey($inFile)) { return $script:State.CustomFilenames[$inFile] }
+
+        if ($V_CheckSmartName.IsChecked) {
+            $vCodecCb = Get-CbVal $V_CCodec
+            $aCodecCb = Get-CbVal $V_CAudio
+            
+            $vTag = ""
+            if ($vCodecCb -match "H\.264") { $vTag = "H264" }
+            elseif ($vCodecCb -match "H\.265") { $vTag = "HEVC" }
+            elseif ($vCodecCb -match "AV1") { $vTag = "AV1" }
+            
+            $aTag = ""
+            if ($aCodecCb -match "AAC") { $aTag = "AAC" }
+            elseif ($aCodecCb -match "EAC3") { $aTag = "EAC3" }
+            elseif ($aCodecCb -match "AC3") { $aTag = "AC3" }
+
+            if ($aTag) { $baseName = $baseName -replace '(?i)\b(dts-?hd(\s*ma)?|dts|truehd|flac|eac3|ac3|aac|mp3)\b', $aTag }
+            if ($vTag) { $baseName = $baseName -replace '(?i)\b(hevc|x265|h265|x264|h264|avc|av1)\b', $vTag }
+        }
+        return $baseName
+    }
+
     # Function to build visual string representation for FFmpeg (Video) arguments
     function Update-FfmpegPreview {
-        if (-not $V_CheckCustomParams.IsChecked) { return }
         
         $inFile = "C:\input_video.mp4"
         if ($null -ne $V_InList.SelectedItem) { $inFile = $V_InList.SelectedItem.ToString() }
         elseif ($V_InList.Items.Count -gt 0) { $inFile = $V_InList.Items[0].ToString() }
 
+        # Sync the UI Textbox to current item dynamically
+        if ($inFile -ne "C:\input_video.mp4") {
+            $script:State.IsAutoUpdatingFilename = $true
+            $V_OutFilename.Text = Get-SmartVideoFilename $inFile
+            $script:State.IsAutoUpdatingFilename = $false
+        }
+
+        if (-not $V_CheckCustomParams.IsChecked) { return }
+
         $outDir = $V_OutDir.Text
         if ([string]::IsNullOrWhiteSpace($outDir) -or $outDir -match "Select target") { $outDir = Join-Path $ScriptDir "convert\video" }
-        $name = if ($inFile -ne "C:\input_video.mp4") { [System.IO.Path]::GetFileNameWithoutExtension($inFile) } else { "output_video" }
+        $name = Get-SmartVideoFilename $inFile
         $fmt = (Get-CbVal $V_CFormat).ToLower()
         $outFile = Join-Path $outDir "$name.$fmt"
         
@@ -1904,6 +1943,17 @@ try {
     $V_TargetSizeMB.Add_TextChanged({ Update-FfmpegPreview })
     $V_SliderCRF.Add_ValueChanged({ Update-FfmpegPreview })
     $V_OutDir.Add_TextChanged({ Update-FfmpegPreview })
+    
+    $V_OutFilename.Add_TextChanged({
+        if (-not $script:State.IsAutoUpdatingFilename -and $V_InList.SelectedItem) {
+            $script:State.CustomFilenames[$V_InList.SelectedItem.ToString()] = $V_OutFilename.Text
+            Update-FfmpegPreview
+        }
+    })
+    $V_CheckSmartName.Add_Checked({
+        if ($V_InList.SelectedItem) { $script:State.CustomFilenames.Remove($V_InList.SelectedItem.ToString()) }
+        Update-FfmpegPreview
+    })
 
     # Map settings changes to preview updates for the Downloader Tab
     $Y_CheckCustomParams.Add_Checked({ $Y_CustomParamsPanel.Visibility = "Visible"; Update-YtDlpPreview })
@@ -2321,9 +2371,14 @@ try {
             $setWin.FindName("ChkAutoDelete").IsChecked = $Config.AutoDelete
 
             $setWin.FindName("BtnBrowseOutDir").Add_Click({ 
-                $fb = New-Object System.Windows.Forms.FolderBrowserDialog
-                $fb.SelectedPath = $ScriptDir # Add this line
-                if ($fb.ShowDialog() -eq "OK") { $setWin.FindName("TxtDefaultOutDir").Text = $fb.SelectedPath } 
+                $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+                $fd.Description = "Select Default Output Folder"
+                $fd.SelectedPath = $ScriptDir
+                $fd.ShowNewFolderButton = $true
+                
+                if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { 
+                    $setWin.FindName("TxtDefaultOutDir").Text = $fd.SelectedPath
+                } 
             })
 
             $setWin.FindName("BtnSaveSet").Add_Click({
@@ -2531,11 +2586,17 @@ try {
     $V_BtnClear.Add_Click({ $V_InList.Items.Clear(); Update-FfmpegPreview })
     $I_BtnClear.Add_Click({ $I_InList.Items.Clear() })
 
-    # Helper function for assigning an Output Directory
+    # Helper function for assigning an Output Directory using standard FolderBrowserDialog
     function Pick-OutDir([System.Windows.Controls.TextBox]$Box) {
-        $fb = New-Object System.Windows.Forms.FolderBrowserDialog
-        $fb.SelectedPath = $ScriptDir # Start explorer in script directory
-        if ($fb.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $Box.Text = $fb.SelectedPath; Update-AllPreviews } 
+        $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+        $fd.Description = "Select Target Folder"
+        $fd.SelectedPath = $ScriptDir
+        $fd.ShowNewFolderButton = $true
+        
+        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { 
+            $Box.Text = $fd.SelectedPath
+            Update-AllPreviews 
+        } 
     }
 
     $A_BtnOut.Add_Click({ Pick-OutDir $A_OutDir })
@@ -3294,261 +3355,267 @@ try {
         }
     }
 
-    # Routine logic for polling output file of cmd wrapper and translating string matches to progress bar
+# Routine logic for polling output file of cmd wrapper and translating string matches to progress bar
     $timer.Add_Tick({
-            if (Test-Path -LiteralPath $script:State.tempLog) {
-                try {
-                    $fs = New-Object System.IO.FileStream($script:State.tempLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-                    $reader = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
-                    $reader.BaseStream.Position = $script:State.lastLogPos
-                    $newText = $reader.ReadToEnd()
-                    $script:State.lastLogPos = $reader.BaseStream.Position
-                    $reader.Close()
-                    $fs.Close()
+        if (Test-Path -LiteralPath $script:State.tempLog) {
+            try {
+                $fs = New-Object System.IO.FileStream($script:State.tempLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                $reader = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+                $reader.BaseStream.Position = $script:State.lastLogPos
+                $newText = $reader.ReadToEnd()
+                $script:State.lastLogPos = $reader.BaseStream.Position
+                $reader.Close()
+                $fs.Close()
 
-                    if (-not [string]::IsNullOrEmpty($newText)) {
-                        $LogBox.AppendText($newText)
-                        if ($CbAutoScrollLog.IsChecked) {
-                            $LogBox.ScrollToEnd()
+                if (-not [string]::IsNullOrEmpty($newText)) {
+                    $LogBox.AppendText($newText)
+                    if ($CbAutoScrollLog.IsChecked) {
+                        $LogBox.ScrollToEnd()
+                    }
+                
+                    $job = $script:State.BatchQueue[$script:State.CurrentJobIndex]
+
+                    # Detect FFMPEG duration parameter to calculate percentage
+                    if ($script:State.totalDuration -eq 0 -and $newText -match "Duration:\s*(\d{2}:\d{2}:\d{2})") {
+                        try { $script:State.totalDuration = [TimeSpan]::Parse($matches[1]).TotalSeconds } catch {}
+                    }
+
+                    if ($job.IsYtDlp) {
+                        # Regex logic to capture yt-dlp percentage and string ETA
+                        $percentMatches = [regex]::Matches($newText, "\[download\]\s+(\d+\.?\d*)%")
+                        if ($percentMatches.Count -gt 0) {
+                            $PBar.Value = [math]::Round([double]$percentMatches[$percentMatches.Count - 1].Groups[1].Value)
+                            $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
                         }
-                    
-                        $job = $script:State.BatchQueue[$script:State.CurrentJobIndex]
-
-                        # Detect FFMPEG duration parameter to calculate percentage
-                        if ($script:State.totalDuration -eq 0 -and $newText -match "Duration:\s*(\d{2}:\d{2}:\d{2})") {
-                            try { $script:State.totalDuration = [TimeSpan]::Parse($matches[1]).TotalSeconds } catch {}
+                        $etaMatches = [regex]::Matches($newText, "ETA\s+(\d+:\d+)")
+                        if ($etaMatches.Count -gt 0) {
+                            $TxtETA.Text = "ETA: " + $etaMatches[$etaMatches.Count - 1].Groups[1].Value
                         }
-
-                        $rxTime = [System.Text.RegularExpressions.Regex]::new("time=(\d{2}:\d{2}:\d{2})", [System.Text.RegularExpressions.RegexOptions]::Compiled)
-                        $timeMatches = $rxTime.Matches($newText)
-                        if ($timeMatches.Count -gt 0 -and $script:State.totalDuration -gt 0) {
-                            $lastMatch = $timeMatches[$timeMatches.Count - 1].Groups[1].Value
+                    }
+                    elseif ($newText -match "(\d+\.\d+)%") {
+                        # Regex Logic for Upscayl percentage 
+                        $upscaleMatches = [regex]::Matches($newText, "(\d+\.\d+)%")
+                        try {
+                            $PBar.Value = [math]::Min(100.0, [double]::Parse($upscaleMatches[$upscaleMatches.Count - 1].Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture))
+                            $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
+                            $TxtETA.Text = "Status: Upscaling..."
+                        }
+                        catch {}
+                    }
+                    elseif ($job.IsWhisper -and $script:State.totalDuration -gt 0) {
+                        # Regex logic mapping Whisper VTT output string lines back into duration
+                        $whisperMatches = [regex]::Matches($newText, "-->\s*(?:(\d{2,3}):)?(\d{2}):(\d{2})\.(\d{3})")
+                        if ($whisperMatches.Count -gt 0) {
+                            $wm = $whisperMatches[$whisperMatches.Count - 1]
                             try {
-                                $curr = [TimeSpan]::Parse($lastMatch).TotalSeconds
-                                $PBar.Value = ($curr / $script:State.totalDuration) * 100
+                                $h = if ($wm.Groups[1].Value) { [int]$wm.Groups[1].Value } else { 0 }
+                                $m = [int]$wm.Groups[2].Value; $s = [int]$wm.Groups[3].Value; $ms = [int]$wm.Groups[4].Value
+                                $curr = ($h * 3600) + ($m * 60) + $s + ($ms / 1000.0)
+                                $prog = ($curr / $script:State.totalDuration) * 100
+                                $PBar.Value = [math]::Min([double]100.0, [double]$prog)
                                 $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
-                            
-                                $rxSpeed = [System.Text.RegularExpressions.Regex]::new("speed=\s*([\d\.]+)x", [System.Text.RegularExpressions.RegexOptions]::Compiled)
-                                $speedMatches = $rxSpeed.Matches($newText)
+                                $TxtETA.Text = "Status: Transcribing..."
+                            }
+                            catch {}
+                        }
+                    }
+                    # RESTORED: FFmpeg Progress Tracker with ETA Calculation
+                    elseif ($script:State.totalDuration -gt 0) {
+                        $timeMatches = [regex]::Matches($newText, "time=\s*(\d{2}:\d{2}:\d{2}\.\d+)")
+                        if ($timeMatches.Count -gt 0) {
+                            try {
+                                $currentTime = [TimeSpan]::Parse($timeMatches[$timeMatches.Count - 1].Groups[1].Value).TotalSeconds
+                                $PBar.Value = [math]::Min(100.0, [math]::Round(($currentTime / $script:State.totalDuration) * 100))
+                                $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
+                                
+                                # Calculate ETA based on FFmpeg's output speed
+                                $speedMatches = [regex]::Matches($newText, "speed=\s*(\d+(?:\.\d+)?)x")
                                 if ($speedMatches.Count -gt 0) {
                                     $speed = [double]::Parse($speedMatches[$speedMatches.Count - 1].Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture)
                                     if ($speed -gt 0) {
-                                        $remainingSecs = ($script:State.totalDuration - $curr) / $speed
-                                        if ($remainingSecs -gt 0) {
-                                            $ts = [TimeSpan]::FromSeconds($remainingSecs)
-                                            $TxtETA.Text = "ETA: $( '{0:D2}:{1:D2}:{2:D2}' -f $ts.Hours, $ts.Minutes, $ts.Seconds )"
-                                        }
-                                    }
-                                }
-                            }
-                            catch {}
-                        }
-                        elseif ($job.IsYtDlp) {
-                            # Regex logic to capture yt-dlp percentage and string ETA
-                            $percentMatches = [regex]::Matches($newText, "\[download\]\s+(\d+\.?\d*)%")
-                            if ($percentMatches.Count -gt 0) {
-                                $PBar.Value = [math]::Round([double]$percentMatches[$percentMatches.Count - 1].Groups[1].Value)
-                                $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
-                            }
-                            $etaMatches = [regex]::Matches($newText, "ETA\s+(\d+:\d+)")
-                            if ($etaMatches.Count -gt 0) {
-                                $TxtETA.Text = "ETA: " + $etaMatches[$etaMatches.Count - 1].Groups[1].Value
-                            }
-                        }
-                        elseif ($newText -match "(\d+\.\d+)%") {
-                            # Regex Logic for Upscayl percentage 
-                            $upscaleMatches = [regex]::Matches($newText, "(\d+\.\d+)%")
-                            try {
-                                $PBar.Value = [math]::Min(100.0, [double]::Parse($upscaleMatches[$upscaleMatches.Count - 1].Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture))
-                                $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
-                                $TxtETA.Text = "Status: Upscaling..."
-                            }
-                            catch {}
-                        }
-                        elseif ($job.IsWhisper -and $script:State.totalDuration -gt 0) {
-                            # Regex logic mapping Whisper VTT output string lines back into duration
-                            $whisperMatches = [regex]::Matches($newText, "-->\s*(?:(\d{2,3}):)?(\d{2}):(\d{2})\.(\d{3})")
-                            if ($whisperMatches.Count -gt 0) {
-                                $wm = $whisperMatches[$whisperMatches.Count - 1]
-                                try {
-                                    $h = if ($wm.Groups[1].Value) { [int]$wm.Groups[1].Value } else { 0 }
-                                    $m = [int]$wm.Groups[2].Value; $s = [int]$wm.Groups[3].Value; $ms = [int]$wm.Groups[4].Value
-                                    $curr = ($h * 3600) + ($m * 60) + $s + ($ms / 1000.0)
-                                    $prog = ($curr / $script:State.totalDuration) * 100
-                                    $PBar.Value = [math]::Min([double]100.0, [double]$prog)
-                                    $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
-                                    $TxtETA.Text = "Status: Transcribing..."
-                                }
-                                catch {}
-                            }
-                        }
-                    }
-                }
-                catch {}
-            }
-
-            # Evaluate execution exit state logic
-            if ($script:State.p -and $script:State.p.HasExited) { 
-                $timer.Stop()
-                $job = $script:State.BatchQueue[$script:State.CurrentJobIndex]
-            
-                [int]$exCode = 0
-                try { 
-                    if ($null -ne $script:State.p.ExitCode) {
-                        $exCode = [int]$script:State.p.ExitCode 
-                    }
-                }
-                catch {}
-    
-                if ($exCode -eq 0 -or ($job.IsYtDlp -and $exCode -in @(1, 2))) {
-                
-                    $logText = $LogBox.Text
-                
-                    # Advanced parsing: sometimes tools don't return non-zero exit codes correctly on failure
-                    if ($job.CustomTool -match "upscayl" -and ($logText -match "Error: Unknown model" -or $logText -match "failed to load" -or $logText -match "invalid param")) {
-                        $StatusText.Text = "Failed (Model Error)"
-                        $StatusText.Foreground = "#EF4444"
-                        $LogBox.AppendText("`r`n[ERROR] Upscayl failed to load the AI models. The model directory might be missing or invalid.`r`n")
-                        $exCode = 1
-                    }
-                    elseif (-not $job.IsYtDlp -and -not $job.CustomTool -and ($logText -match "Error opening input" -or $logText -match "Error binding filtergraph" -or $logText -match "Invalid argument" -or $logText -match "Cannot find an unused" -or $logText -match "Option not found" -or $logText -match "Unable to open" -or $logText -match "Error initializing filters" -or $logText -match "No such file or directory" -or $logText -match "Unrecognized option")) {
-                        $StatusText.Text = "Failed (FFmpeg Error)"
-                        $StatusText.Foreground = "#EF4444"
-                        $LogBox.AppendText("`r`n[ERROR] FFmpeg encountered an error. The process was aborted.`r`n")
-                        $exCode = 1
-                    }
-                    elseif ($job.IsYtDlp -and ($logText -match "ERROR:" -or $logText -match "Could not find known video or audio" -or $logText -match "Unsupported URL" -or $logText -match "This video is unavailable")) {
-                        $StatusText.Text = "Failed (Extraction Error)"
-                        $StatusText.Foreground = "#EF4444"
-                        $LogBox.AppendText("`r`n[ERROR] yt-dlp could not extract media. URL might be unsupported, protected, or missing a video.`r`n")
-                        $exCode = 1
-                    }
-                    elseif ($job.IsYtDlp -and $logText -notmatch "\[download\]" -and $logText -notmatch "\[info\]" -and $logText -notmatch "has already been downloaded") {
-                        $StatusText.Text = "Failed (No Media Found)"
-                        $StatusText.Foreground = "#EF4444"
-                        $LogBox.AppendText("`r`n[ERROR] No valid media could be found to download. The site might not contain an extractable video/audio.`r`n")
-                        $exCode = 1
-                    }
-                    elseif ($exCode -ne 0) {
-                        $StatusText.Text = "Finished (With minor warnings)."
-                        $StatusText.Foreground = "#F59E0B"
-                        $LogBox.AppendText("`r`n[WARNING] Completed, but some post-processing (e.g. metadata/thumbnail) had issues.`r`n")
-                    }
-                    else {
-                        $StatusText.Text = "Finished Successfully."
-                        $StatusText.Foreground = "#10B981"
-
-                        if ($job.IsYtDlp) {
-                            try {
-                                $finalFile = $job.OutputFile -replace '\.part$', '' -replace '\.ytdl$', ''
-                                if (-not $finalFile -or -not (Test-Path -LiteralPath $finalFile)) {
-                                    $finalFile = (Get-ChildItem -Path $job.OutputDir -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
-                                }
-
-                                if ($finalFile -and (Test-Path -LiteralPath $finalFile)) {
-                                    $dlTitle = [System.IO.Path]::GetFileNameWithoutExtension($finalFile)
-                                    $dlDur = "Unknown"
-                                    $dlQual = "Audio Only"
-
-                                    # --- ADDED: Save title to memory for the batch overview ---
-                                    if ($null -eq $script:State.YtDlpDownloadedTitles) { $script:State.YtDlpDownloadedTitles = @() }
-                                    $script:State.YtDlpDownloadedTitles += $dlTitle
-                                    # ----------------------------------------------------------
-
-                                    # Only run FFprobe if it actually exists on the system
-                                    if ($script:State.ffprobeFound) {
-                                        $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
-                                        $pinfoDur.FileName = $script:State.ffprobe
-                                        $pinfoDur.Arguments = "-v error -show_entries format=duration:stream=width,height -of json `"$finalFile`""
-                                        $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
-                                        $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-                                        $jsonOut = $pDur.StandardOutput.ReadToEnd()
-                                        $pDur.WaitForExit()
+                                        $remainingSecs = ($script:State.totalDuration - $currentTime) / $speed
+                                        $ts = [TimeSpan]::FromSeconds([math]::Max(0, $remainingSecs))
                                         
-                                        if ($jsonOut) {
-                                            $mediaInfo = $jsonOut | ConvertFrom-Json
-                                            if ($mediaInfo.format.duration) {
-                                                $ts = [TimeSpan]::FromSeconds([double]$mediaInfo.format.duration)
-                                                $dlDur = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
-                                            }
-                                            if ($mediaInfo.streams) {
-                                                $videoStream = $mediaInfo.streams | Where-Object { $_.width } | Select-Object -First 1
-                                                if ($videoStream) {
-                                                    $dlQual = "$($videoStream.width)x$($videoStream.height)"
-                                                    if ($videoStream.height -ge 2160) { $dlQual += " (4K)" }
-                                                    elseif ($videoStream.height -ge 1440) { $dlQual += " (2K)" }
-                                                    elseif ($videoStream.height -ge 1080) { $dlQual += " (1080p)" }
-                                                    elseif ($videoStream.height -ge 720) { $dlQual += " (720p)" }
-                                                }
-                                            }
+                                        if ($ts.TotalHours -ge 1) {
+                                            $TxtETA.Text = "ETA: {0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+                                        } else {
+                                            $TxtETA.Text = "ETA: {0:D2}:{1:D2}" -f $ts.Minutes, $ts.Seconds
                                         }
                                     }
-
-                                    $LogBox.AppendText("`r`n----------------------------------------`r`n")
-                                    $LogBox.AppendText(" DOWNLOAD SUMMARY`r`n")
-                                    $LogBox.AppendText(" Title:   $dlTitle`r`n")
-                                    $LogBox.AppendText(" Time:    $dlDur`r`n")
-                                    $LogBox.AppendText(" Quality: $dlQual`r`n")
-                                    $LogBox.AppendText("----------------------------------------`r`n")
+                                } else {
+                                    # Fallback if FFmpeg hasn't calculated speed yet
+                                    $TxtETA.Text = "Status: Converting... ($($PBar.Value)%)"
                                 }
-                            }
-                            catch {}
-                        }
-
-                        $LogBox.AppendText("`r`n[SUCCESS] Task completed cleanly.`r`n")
-
-                        if ($job.IsWhisper -or $job.CustomTool -match "upscayl") {
-                            $LogBox.AppendText("`r`n[SUCCESS] Processing saved to: $($job.OutputDir)`r`n")
-                        }
-                    
-                        # Deletes base source file upon success if set in settings
-                        if ($Config.AutoDelete -and -not $job.IsYtDlp -and $job.ListItem -and (Test-Path -LiteralPath $job.ListItem)) {
-                            Remove-Item -LiteralPath $job.ListItem -Force -ErrorAction SilentlyContinue
-                            $LogBox.AppendText("[CLEANUP] Deleted original file: $(Split-Path $job.ListItem -Leaf)`r`n")
+                            } catch {}
                         }
                     }
+                }
+            }
+            catch {}
+        }
+
+        # Evaluate execution exit state logic (Ensured this is the ONLY cleanly integrated exit block)
+        if ($script:State.p -and $script:State.p.HasExited) { 
+            $timer.Stop()
+            $job = $script:State.BatchQueue[$script:State.CurrentJobIndex]
+        
+            [int]$exCode = 0
+            try { 
+                if ($null -ne $script:State.p.ExitCode) {
+                    $exCode = [int]$script:State.p.ExitCode 
+                }
+            }
+            catch {}
+
+            if ($exCode -eq 0 -or ($job.IsYtDlp -and $exCode -in @(1, 2))) {
+            
+                $logText = $LogBox.Text
+            
+                # Advanced parsing: sometimes tools don't return non-zero exit codes correctly on failure
+                if ($job.CustomTool -match "upscayl" -and ($logText -match "Error: Unknown model" -or $logText -match "failed to load" -or $logText -match "invalid param")) {
+                    $StatusText.Text = "Failed (Model Error)"
+                    $StatusText.Foreground = "#EF4444"
+                    $LogBox.AppendText("`r`n[ERROR] Upscayl failed to load the AI models. The model directory might be missing or invalid.`r`n")
+                    $exCode = 1
+                }
+                elseif (-not $job.IsYtDlp -and -not $job.CustomTool -and ($logText -match "Error opening input" -or $logText -match "Error binding filtergraph" -or $logText -match "Invalid argument" -or $logText -match "Cannot find an unused" -or $logText -match "Option not found" -or $logText -match "Unable to open" -or $logText -match "Error initializing filters" -or $logText -match "No such file or directory" -or $logText -match "Unrecognized option")) {
+                    $StatusText.Text = "Failed (FFmpeg Error)"
+                    $StatusText.Foreground = "#EF4444"
+                    $LogBox.AppendText("`r`n[ERROR] FFmpeg encountered an error. The process was aborted.`r`n")
+                    $exCode = 1
+                }
+                elseif ($job.IsYtDlp -and ($logText -match "ERROR:" -or $logText -match "Could not find known video or audio" -or $logText -match "Unsupported URL" -or $logText -match "This video is unavailable")) {
+                    $StatusText.Text = "Failed (Extraction Error)"
+                    $StatusText.Foreground = "#EF4444"
+                    $LogBox.AppendText("`r`n[ERROR] yt-dlp could not extract media. URL might be unsupported, protected, or missing a video.`r`n")
+                    $exCode = 1
+                }
+                elseif ($job.IsYtDlp -and $logText -notmatch "\[download\]" -and $logText -notmatch "\[info\]" -and $logText -notmatch "has already been downloaded") {
+                    $StatusText.Text = "Failed (No Media Found)"
+                    $StatusText.Foreground = "#EF4444"
+                    $LogBox.AppendText("`r`n[ERROR] No valid media could be found to download. The site might not contain an extractable video/audio.`r`n")
+                    $exCode = 1
+                }
+                elseif ($exCode -ne 0) {
+                    $StatusText.Text = "Finished (With minor warnings)."
+                    $StatusText.Foreground = "#F59E0B"
+                    $LogBox.AppendText("`r`n[WARNING] Completed, but some post-processing (e.g. metadata/thumbnail) had issues.`r`n")
                 }
                 else {
-                    $StatusText.Text = "Failed (Exit Code: $exCode)"
-                    $StatusText.Foreground = "#EF4444"
-                    $LogBox.AppendText("`r`n[ERROR] Process aborted with error code $exCode.`r`n")
-        
-                    if (Test-Path $script:State.tempLogErr) {
+                    $StatusText.Text = "Finished Successfully."
+                    $StatusText.Foreground = "#10B981"
+
+                    if ($job.IsYtDlp) {
                         try {
-                            $errText = [System.IO.File]::ReadAllText($script:State.tempLogErr, [System.Text.Encoding]::Default)
-                            if (-not [string]::IsNullOrWhiteSpace($errText)) {
-                                $LogBox.AppendText("TECHNICAL ERROR LOG:`r`n$errText`r`n")
-                                Write-CrashLog "Task exited with code $exCode. Output: $errText"
+                            $finalFile = $job.OutputFile -replace '\.part$', '' -replace '\.ytdl$', ''
+                            if (-not $finalFile -or -not (Test-Path -LiteralPath $finalFile)) {
+                                $finalFile = (Get-ChildItem -Path $job.OutputDir -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+                            }
+
+                            if ($finalFile -and (Test-Path -LiteralPath $finalFile)) {
+                                $dlTitle = [System.IO.Path]::GetFileNameWithoutExtension($finalFile)
+                                $dlDur = "Unknown"
+                                $dlQual = "Audio Only"
+
+                                # --- ADDED: Save title to memory for the batch overview ---
+                                if ($null -eq $script:State.YtDlpDownloadedTitles) { $script:State.YtDlpDownloadedTitles = @() }
+                                $script:State.YtDlpDownloadedTitles += $dlTitle
+                                # ----------------------------------------------------------
+
+                                # Only run FFprobe if it actually exists on the system
+                                if ($script:State.ffprobeFound) {
+                                    $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+                                    $pinfoDur.FileName = $script:State.ffprobe
+                                    $pinfoDur.Arguments = "-v error -show_entries format=duration:stream=width,height -of json `"$finalFile`""
+                                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                                    $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                                    $jsonOut = $pDur.StandardOutput.ReadToEnd()
+                                    $pDur.WaitForExit()
+                                    
+                                    if ($jsonOut) {
+                                        $mediaInfo = $jsonOut | ConvertFrom-Json
+                                        if ($mediaInfo.format.duration) {
+                                            $ts = [TimeSpan]::FromSeconds([double]$mediaInfo.format.duration)
+                                            $dlDur = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+                                        }
+                                        if ($mediaInfo.streams) {
+                                            $videoStream = $mediaInfo.streams | Where-Object { $_.width } | Select-Object -First 1
+                                            if ($videoStream) {
+                                                $dlQual = "$($videoStream.width)x$($videoStream.height)"
+                                                if ($videoStream.height -ge 2160) { $dlQual += " (4K)" }
+                                                elseif ($videoStream.height -ge 1440) { $dlQual += " (2K)" }
+                                                elseif ($videoStream.height -ge 1080) { $dlQual += " (1080p)" }
+                                                elseif ($videoStream.height -ge 720) { $dlQual += " (720p)" }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                $LogBox.AppendText("`r`n----------------------------------------`r`n")
+                                $LogBox.AppendText(" DOWNLOAD SUMMARY`r`n")
+                                $LogBox.AppendText(" Title:   $dlTitle`r`n")
+                                $LogBox.AppendText(" Time:    $dlDur`r`n")
+                                $LogBox.AppendText(" Quality: $dlQual`r`n")
+                                $LogBox.AppendText("----------------------------------------`r`n")
                             }
                         }
                         catch {}
                     }
-                }
 
-                if ($exCode -ne 0 -and $job.OutputFile -and (Test-Path -LiteralPath $job.OutputFile)) {
-                    Remove-Item -LiteralPath $job.OutputFile -Force -ErrorAction SilentlyContinue
-                    $LogBox.AppendText("`r`n[CLEANUP] Deleted incomplete output file: $(Split-Path $job.OutputFile -Leaf)`r`n")
-                }
+                    $LogBox.AppendText("`r`n[SUCCESS] Task completed cleanly.`r`n")
 
-                if (-not [string]::IsNullOrWhiteSpace($LogBox.Text)) { Write-ConvertLog $LogBox.Text }
-
-                if ($script:State.p) { try { $script:State.p.Dispose() } catch {}; $script:State.p = $null }
-
-                try {
-                    if ($job.ListBox -ne $null -and $job.ListItem -ne $null) {
-                        $job.ListBox.Items.Remove($job.ListItem)
+                    if ($job.IsWhisper -or $job.CustomTool -match "upscayl") {
+                        $LogBox.AppendText("`r`n[SUCCESS] Processing saved to: $($job.OutputDir)`r`n")
+                    }
+                
+                    # Deletes base source file upon success if set in settings
+                    if ($Config.AutoDelete -and -not $job.IsYtDlp -and $job.ListItem -and (Test-Path -LiteralPath $job.ListItem)) {
+                        Remove-Item -LiteralPath $job.ListItem -Force -ErrorAction SilentlyContinue
+                        $LogBox.AppendText("[CLEANUP] Deleted original file: $(Split-Path $job.ListItem -Leaf)`r`n")
                     }
                 }
-                catch {}
-
-                if ($CbAutoScrollLog.IsChecked) {
-                    $LogBox.ScrollToEnd()
-                }
-
-                $script:State.CurrentJobIndex++
-                [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ Process-NextJob })
             }
-        })
+            else {
+                $StatusText.Text = "Failed (Exit Code: $exCode)"
+                $StatusText.Foreground = "#EF4444"
+                $LogBox.AppendText("`r`n[ERROR] Process aborted with error code $exCode.`r`n")
+    
+                if (Test-Path $script:State.tempLogErr) {
+                    try {
+                        $errText = [System.IO.File]::ReadAllText($script:State.tempLogErr, [System.Text.Encoding]::Default)
+                        if (-not [string]::IsNullOrWhiteSpace($errText)) {
+                            $LogBox.AppendText("TECHNICAL ERROR LOG:`r`n$errText`r`n")
+                            Write-CrashLog "Task exited with code $exCode. Output: $errText"
+                        }
+                    }
+                    catch {}
+                }
+            }
+
+            if ($exCode -ne 0 -and $job.OutputFile -and (Test-Path -LiteralPath $job.OutputFile)) {
+                Remove-Item -LiteralPath $job.OutputFile -Force -ErrorAction SilentlyContinue
+                $LogBox.AppendText("`r`n[CLEANUP] Deleted incomplete output file: $(Split-Path $job.OutputFile -Leaf)`r`n")
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($LogBox.Text)) { Write-ConvertLog $LogBox.Text }
+
+            if ($script:State.p) { try { $script:State.p.Dispose() } catch {}; $script:State.p = $null }
+
+            try {
+                if ($job.ListBox -ne $null -and $job.ListItem -ne $null) {
+                    $job.ListBox.Items.Remove($job.ListItem)
+                }
+            }
+            catch {}
+
+            if ($CbAutoScrollLog.IsChecked) {
+                $LogBox.ScrollToEnd()
+            }
+
+            $script:State.CurrentJobIndex++
+            [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ Process-NextJob })
+        }
+    })
 
     # Main entry point when the user clicks 'START PROCESS'. Parses inputs, creates jobs, and starts the queue.
     $BtnRun.Add_Click({
@@ -4384,8 +4451,8 @@ $script:State.PlaylistChoice = $null
                         $fmtRaw = Get-CbVal $V_CFormat
                         $fmt = if ([string]::IsNullOrWhiteSpace($fmtRaw)) { "mp4" } else { $fmtRaw.ToLower() }
                         
-
-                        $outFile = Get-UniqueFileName (Join-Path $outDir "$name.$fmt")
+                        $smartName = Get-SmartVideoFilename $inFile
+                        $outFile = Get-UniqueFileName (Join-Path $outDir "$smartName.$fmt")
 
                         $argsSafe = (Get-FfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $true).Args
                         $argsFull = (Get-FfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
