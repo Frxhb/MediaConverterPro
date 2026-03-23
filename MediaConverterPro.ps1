@@ -1312,7 +1312,7 @@ try {
             </Grid>
 
             <Expander x:Name="ExpLog" Header="Live Log (Errors and Details)" Foreground="{DynamicResource MutedBrush}" FontWeight="SemiBold" FontSize="13" Margin="0,5,0,0">
-                <TextBox x:Name="LogBox" Background="#0F172A" Foreground="#10B981" Height="200" IsReadOnly="True" VerticalScrollBarVisibility="Visible" FontFamily="Consolas" FontSize="14" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,10,0,0"/>
+                <TextBox x:Name="LogBox" Background="#0F172A" Foreground="#10B981" Height="150" IsReadOnly="True" VerticalScrollBarVisibility="Visible" FontFamily="Consolas" FontSize="14" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,10,0,0"/>
             </Expander>
         </StackPanel>
     </Grid>
