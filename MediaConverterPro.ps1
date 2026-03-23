@@ -707,8 +707,8 @@ try {
                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                                     <TextBox x:Name="V_OutDir" Grid.Row="0" ToolTip="The folder where processed files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow" Margin="0,0,0,10" Height="40"/>
                                     <Button x:Name="V_BtnOut" Grid.Row="0" Grid.Column="1" Content="Select Folder" Margin="10,0,0,10" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
-                                    <TextBox x:Name="V_OutFilename" Grid.Row="1" Grid.Column="0" ToolTip="Edit the final filename for the selected item" Text="Output Filename..." Cursor="IBeam" Height="40"/>
-                                    <CheckBox x:Name="V_CheckSmartName" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Content="Auto-Update Name" IsChecked="True" VerticalAlignment="Center" Margin="10,0,0,0" ToolTip="Automatically replace audio/video tags in filename (e.g. dtshd to eac3)" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
+                                    <TextBox x:Name="V_OutFilename" Grid.Row="1" Grid.Column="0" ToolTip="Edit the final filename for the selected item" Text="" Cursor="IBeam" Height="40"/>
+                                    <CheckBox x:Name="V_CheckSmartName" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Content="Auto-Update Name" IsChecked="False" IsEnabled="False" VerticalAlignment="Center" Margin="10,0,0,0" ToolTip="Automatically replace audio/video tags in filename (e.g. dtshd to eac3)" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -2755,7 +2755,13 @@ try {
     })    
 
     $A_BtnClear.Add_Click({ $A_InList.Items.Clear(); Update-AudioFfmpegPreview })
-    $V_BtnClear.Add_Click({ $V_InList.Items.Clear(); Update-FfmpegPreview })
+    $V_BtnClear.Add_Click({ 
+        $V_InList.Items.Clear()
+        $V_OutFilename.Clear()
+        $V_CheckSmartName.IsChecked = $false
+        $V_CheckSmartName.IsEnabled = $false
+        Update-FfmpegPreview 
+    })
     $I_BtnClear.Add_Click({ $I_InList.Items.Clear() })
 
     # Helper function for assigning an Output Directory using standard FolderBrowserDialog
@@ -3096,9 +3102,11 @@ try {
             Update-AudioFfmpegPreview 
         })
 
-    # Update Video Sliders when a new video is selected
+    # Update Video Sliders and Filename UI when a new video is selected
     $V_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { 
             if ($V_InList.SelectedItem) {
+                $V_CheckSmartName.IsEnabled = $true
+                
                 $totalSecs = Get-MediaDuration $V_InList.SelectedItem.ToString()
                 if ($totalSecs -gt 0) {
                     $V_SliderTrimStart.IsEnabled = $true; $V_SliderTrimEnd.IsEnabled = $true
@@ -3108,6 +3116,9 @@ try {
             }
             else {
                 $V_SliderTrimStart.IsEnabled = $false; $V_SliderTrimEnd.IsEnabled = $false
+                $V_CheckSmartName.IsEnabled = $false
+                $V_CheckSmartName.IsChecked = $false
+                $V_OutFilename.Clear()
             }
             Update-FfmpegPreview 
         })
@@ -3353,7 +3364,7 @@ try {
     }
     
     # Core loop logic for parsing the global task queue
-    function Process-NextJob {
+function Process-NextJob {
         if ($script:State.CurrentJobIndex -ge $script:State.BatchQueue.Count) {
             if ($timer) { $timer.Stop() }
             $BtnCancel.IsEnabled = $false
@@ -3361,43 +3372,31 @@ try {
             $TxtETA.Text = "ETA: --:--"
             $TaskbarProgress.ProgressState = "None"
             
-            # --- ADDED: Print Batch Overview for yt-dlp ---
+            # --- Print Batch Overview for yt-dlp ---
             $dlCount = if ($script:State.YtDlpDownloadedTitles) { $script:State.YtDlpDownloadedTitles.Count } else { 0 }
             $skipCount = if ($script:State.YtDlpSkippedLinks) { $script:State.YtDlpSkippedLinks.Count } else { 0 }
 
-            # Show overview if there were multiple downloads OR if anything was skipped
             if ($dlCount -gt 1 -or $skipCount -gt 0) {
                 $LogBox.AppendText("`r`n============================================================`r`n")
                 $LogBox.AppendText("[BATCH COMPLETE] Successfully processed your queue!`r`n`r`n")
-                
                 if ($dlCount -gt 0) {
                     $LogBox.AppendText("Downloaded ($dlCount) videos:`r`n")
-                    foreach ($title in $script:State.YtDlpDownloadedTitles) {
-                        $LogBox.AppendText(" -> $title`r`n")
-                    }
+                    foreach ($title in $script:State.YtDlpDownloadedTitles) { $LogBox.AppendText(" -> $title`r`n") }
                 }
-
                 if ($skipCount -gt 0) {
                     $LogBox.AppendText("`r`nSkipped the following links:`r`n")
-                    foreach ($skipped in $script:State.YtDlpSkippedLinks) {
-                        $LogBox.AppendText("$skipped`r`n")
-                    }
+                    foreach ($skipped in $script:State.YtDlpSkippedLinks) { $LogBox.AppendText("$skipped`r`n") }
                 }
-
                 $LogBox.AppendText("============================================================`r`n")
                 if ($CbAutoScrollLog.IsChecked) { $LogBox.ScrollToEnd() }
             }
-            # ----------------------------------------------
             
             if ($LogBox.Text -match "\[ERROR\]") {
                 $StatusText.Text = "Finished with errors! Check the live log."
-                $StatusText.Foreground = "#EF4444" 
-                $TaskbarProgress.ProgressState = "Error"
+                $StatusText.Foreground = "#EF4444"; $TaskbarProgress.ProgressState = "Error"
             }
             elseif ($LogBox.Text -match "\[CANCEL\]") {
-                $StatusText.Text = "Process cancelled."
-                $StatusText.Foreground = "#EF4444" 
-                $TaskbarProgress.ProgressState = "None"
+                $StatusText.Text = "Process cancelled."; $StatusText.Foreground = "#EF4444"
             }
             else {
                 $StatusText.Text = "Successfully completed! ($($script:State.BatchQueue.Count) jobs processed)"
@@ -3405,12 +3404,8 @@ try {
             }
             
             $PBar.Value = 100; $BtnRun.IsEnabled = $true; $BtnUpdate.IsEnabled = $true; $BtnShow.Visibility = "Visible"
-            
             Write-ConvertLog "=== Queue Completed ==="
-
-            if ($Config.PlaySound) {
-                [System.Media.SystemSounds]::Asterisk.Play()
-            }
+            if ($Config.PlaySound) { [System.Media.SystemSounds]::Asterisk.Play() }
             
             $msg = if ($LogBox.Text -match "\[ERROR\]") { "Process finished with errors. Check the live log for details." } else { "All queued files were processed successfully!" }
             Show-Toast -Title "Batch Complete" -Message $msg
@@ -3420,124 +3415,98 @@ try {
         }
 
         Save-Queue
-
         $job = $script:State.BatchQueue[$script:State.CurrentJobIndex]
         $StatusText.Text = "Processing job $($script:State.CurrentJobIndex + 1) of $($script:State.BatchQueue.Count)..."
         $StatusText.Foreground = "#6366F1"; $PBar.Value = 0; $LogBox.Clear(); $TxtETA.Text = "ETA: Calc..."
-        $TaskbarProgress.ProgressState = "Normal"
-        $TaskbarProgress.ProgressValue = 0.0
+        $TaskbarProgress.ProgressState = "Normal"; $TaskbarProgress.ProgressValue = 0.0
 
         try {
+            # 1. Clean up old logs
             if (Test-Path $script:State.tempLog) { Remove-Item $script:State.tempLog -Force -ErrorAction SilentlyContinue }
             if (Test-Path $script:State.tempLogErr) { Remove-Item $script:State.tempLogErr -Force -ErrorAction SilentlyContinue }
-            $script:State.lastLogPos = 0; $script:State.totalDuration = 0
-            
+            $script:State.lastLogPos = 0; $script:State.totalDuration = 0; $script:State.totalFrames = 0
+
+            # 2. Setup Tool Path
+            $toolPath = if ($job.IsYtDlp) { $script:State.ytdlp } elseif ($job.CustomTool) { $job.CustomTool } else { $script:State.ffmpeg }
+
+            # 3. FAST FRAME PRE-FETCH (Prevents UI Hang on large files)
+            if (-not $job.IsYtDlp -and $script:State.ffprobeFound -and $job.InputFile -and (Test-Path -LiteralPath $job.InputFile)) {
+                try {
+                    $pinfoF = New-Object System.Diagnostics.ProcessStartInfo
+                    $pinfoF.FileName = $script:State.ffprobe
+                    $pinfoF.Arguments = "-v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 `"$($job.InputFile)`""
+                    $pinfoF.UseShellExecute = $false; $pinfoF.RedirectStandardOutput = $true; $pinfoF.CreateNoWindow = $true
+                    $pFs = [System.Diagnostics.Process]::Start($pinfoF)
+                    if ($pFs.WaitForExit(3000)) {
+                        $fStr = $pFs.StandardOutput.ReadToEnd().Trim()
+                        if ($fStr -match '^\d+$') { $script:State.totalFrames = [int]$fStr }
+                    }
+                } catch { Write-CrashLog "Fast Frame pre-fetch failed: $($_.Exception.Message)" }
+            }
+
+            # 4. Build Clean Arguments
             $rawArgs = @()
             if (-not $job.IsYtDlp -and $job.CustomTool -notmatch "python.exe|upscayl") {
-                if ($Config.ThreadLimit -and $Config.ThreadLimit -ne "Auto") {
-                    $rawArgs += @("-threads", $Config.ThreadLimit)
-                }
+                if ($Config.ThreadLimit -and $Config.ThreadLimit -ne "Auto") { $rawArgs += @("-threads", $Config.ThreadLimit) }
             }
             foreach ($arg in $job.Args) { $rawArgs += $arg.ToString().Trim() }
-
-            $argString = ($rawArgs | ForEach-Object {
-                    $str = [string]$_
-                    if ([string]::IsNullOrWhiteSpace($str)) { return '""' }
-                
-                    # If already cleanly quoted, leave it
-                    if ($str -match '^".*"$') { return $str }
-
-                    # Wrap in quotes if it contains spaces or CMD reserved characters
-                    if ($str -match '[\s&^<>|%!=:]') {
-                        # Safely escape internal quotes AND protect trailing backslashes
-                        $str = $str -replace '(\\+)"', '$1$1\"' -replace '(\\+)$', '$1$1' -replace '"', '\"'
-                        return "`"$str`""
-                    }
-                    return $str
-                }) -join " "
-
-            $toolPath = if ($job.IsYtDlp) { $script:State.ytdlp } 
-            elseif ($job.CustomTool) { $job.CustomTool } 
-            else { $script:State.ffmpeg }
-
-            Write-ConvertLog "Executing: $toolPath $argString"
-
-            # --- ADDED: Print exact command to the Live Log UI ---
-            $friendlyToolName = if ($job.IsYtDlp) { "yt-dlp" } elseif ($job.CustomTool) { [System.IO.Path]::GetFileNameWithoutExtension($job.CustomTool) } else { "ffmpeg" }
             
+            $argString = ""
+            foreach ($arg in $rawArgs) {
+                $a = [string]$arg
+                if ($a -match ' ') { $argString += " `"$a`"" } else { $argString += " $a" }
+            }
+
+            # 5. UI PUMP (Clears spinning icon)
+            $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+            [System.Windows.Forms.Application]::DoEvents()
+
+            # 6. Logging
+            $friendlyToolName = if ($job.IsYtDlp) { "yt-dlp" } elseif ($job.CustomTool) { [System.IO.Path]::GetFileNameWithoutExtension($job.CustomTool) } else { "ffmpeg" }
             $LogBox.AppendText("`r`n============================================================`r`n")
             $LogBox.AppendText("[$($friendlyToolName.ToUpper()) COMMAND USED]:`r`n")
             $LogBox.AppendText("`"$toolPath`" $argString`r`n")
             $LogBox.AppendText("============================================================`r`n")
-            # -----------------------------------------------------
+            Write-ConvertLog "Executing: $toolPath $argString"
 
-            if ($job.IsYtDlp) {
-                $LogBox.AppendText("`r`n[INFO] Starting YouTube-DLP Job...`r`n")
-                $LogBox.AppendText("[INFO] Target URL: $($job.Args[-1])`r`n")
-                $LogBox.AppendText("[INFO] Requested Quality: $($job.SelectedRes)`r`n")
-                $LogBox.AppendText("[INFO] Negotiating with server for best available match...`r`n`r`n")
-            }
-
-            if (Test-Path $script:State.tempLog) { Remove-Item $script:State.tempLog -Force -ErrorAction SilentlyContinue }
-        
+            # 7. Safe Execution via CMD /S /C
             $combinedLog = $script:State.tempLog
-
-            # Wrapper logic allows catching stdout and stderr efficiently into one file that the timer polling can read
             $psi = New-Object System.Diagnostics.ProcessStartInfo
             $psi.FileName = "cmd.exe"
+            $psi.Arguments = "/S /C ""`"$toolPath`" $argString > `"$combinedLog`" 2>&1"""
+            $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
 
-            if ($job.OutputDir -and -not (Test-Path $job.OutputDir)) {
-                [void](New-Item -ItemType Directory -Path $job.OutputDir -Force)
-            }
-            else { $psi.WorkingDirectory = $ScriptDir }        
+            if ($job.OutputDir -and -not (Test-Path $job.OutputDir)) { [void](New-Item -ItemType Directory -Path $job.OutputDir -Force) }
+            $psi.WorkingDirectory = if ($job.OutputDir -and (Test-Path $job.OutputDir)) { $job.OutputDir } else { $ScriptDir }
 
-            $safeToolPath = "`"$toolPath`""
-            $psi.Arguments = "/c `"$safeToolPath $argString > `"$combinedLog`" 2>&1`""
-        
-            $psi.UseShellExecute = $false
-            $psi.CreateNoWindow = $true
-            $psi.WindowStyle = "Hidden"
-
-            try {
-                $script:State.p = [System.Diagnostics.Process]::Start($psi)
-            }
-            catch {
-                $LogBox.AppendText("[FATAL ERROR] Could not start CMD wrapper: $($_.Exception.Message)`r`n")
-                return
-            }
+            $script:State.p = [System.Diagnostics.Process]::Start($psi)
+            if ($null -eq $script:State.p) { throw "Process failed to start." }
 
             $timer.Start()
         }
-        
         catch { 
             $errMsg = "Failed processing job $($script:State.CurrentJobIndex + 1): $($_.Exception.Message)"
-            Write-CrashLog "$errMsg`r`n$($_.ScriptStackTrace)"
-            
-            # Log directly to the UI so the user knows what happened without halting the queue
-            $window.Dispatcher.InvokeAsync([Action] {
-                    $LogBox.AppendText("`r`n[CRITICAL ERROR] $errMsg`r`nSkipping to next job...`r`n")
-                    if ($CbAutoScrollLog.IsChecked) { $LogBox.ScrollToEnd() }
-                
-                    # Clean up process if it hung
-                    if ($script:State.p) { try { $script:State.p.Dispose() } catch {}; $script:State.p = $null }
-
-                    $script:State.CurrentJobIndex++
-                    Process-NextJob
-                }, [System.Windows.Threading.DispatcherPriority]::Background)
+            Write-CrashLog "$errMsg"
+            $LogBox.AppendText("`r`n[CRITICAL ERROR] $errMsg`r`n")
+            $script:State.CurrentJobIndex++; Process-NextJob
         }
     }
-
 # Routine logic for polling output file of cmd wrapper and translating string matches to progress bar
     $timer.Add_Tick({
         if (Test-Path -LiteralPath $script:State.tempLog) {
             try {
-                $fs = New-Object System.IO.FileStream($script:State.tempLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                # Open with full sharing permissions to prevent FFmpeg from blocking our read
+                $fs = [System.IO.File]::Open($script:State.tempLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
                 $reader = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
-                $reader.BaseStream.Position = $script:State.lastLogPos
-                $newText = $reader.ReadToEnd()
-                $script:State.lastLogPos = $reader.BaseStream.Position
-                $reader.Close()
-                $fs.Close()
+                
+                if ($script:State.lastLogPos -lt $reader.BaseStream.Length) {
+                    $reader.BaseStream.Seek($script:State.lastLogPos, [System.IO.SeekOrigin]::Begin) | Out-Null
+                    $newText = $reader.ReadToEnd()
+                    $script:State.lastLogPos = $reader.BaseStream.Position
+                } else {
+                    $newText = ""
+                }
+                $reader.Close(); $fs.Close()
 
                 if (-not [string]::IsNullOrEmpty($newText)) {
                     $LogBox.AppendText($newText)
@@ -3547,9 +3516,12 @@ try {
                 
                     $job = $script:State.BatchQueue[$script:State.CurrentJobIndex]
 
-                    # Detect FFMPEG duration parameter to calculate percentage
-                    if ($script:State.totalDuration -eq 0 -and $newText -match "Duration:\s*(\d{2}:\d{2}:\d{2})") {
-                        try { $script:State.totalDuration = [TimeSpan]::Parse($matches[1]).TotalSeconds } catch {}
+                    # Detect FFMPEG duration AND total frames for better progress tracking
+                    if ($newText -match "Duration:\s*(\d{2}:\d{2}:\d{2})") {
+                        try { if ($script:State.totalDuration -eq 0) { $script:State.totalDuration = [TimeSpan]::Parse($matches[1]).TotalSeconds } } catch {}
+                    }
+                    if ($newText -match "NUMBER_OF_FRAMES\s*:\s*(\d+)") {
+                        try { if ($null -eq $script:State.totalFrames -or $script:State.totalFrames -eq 0) { $script:State.totalFrames = [int]$matches[1] } } catch {}
                     }
 
                     if ($job.IsYtDlp) {
@@ -3593,32 +3565,47 @@ try {
                     }
                     # RESTORED: FFmpeg Progress Tracker with ETA Calculation
                     elseif ($script:State.totalDuration -gt 0) {
-                        $timeMatches = [regex]::Matches($newText, "time=\s*(\d{2}:\d{2}:\d{2}\.\d+)")
-                        if ($timeMatches.Count -gt 0) {
+                        # Flexible Regex for time (works with or without milliseconds) and frame fallback
+                        $timeMatch = [regex]::Match($newText, "time=\s*(\d{2}:\d{2}:\d{2}(?:\.\d+)?)")
+                        $frameMatch = [regex]::Match($newText, "frame=\s*(\d+)")
+                        
+                        if ($timeMatch.Success -and $timeMatch.Groups[1].Value -ne "N/A") {
                             try {
-                                $currentTime = [TimeSpan]::Parse($timeMatches[$timeMatches.Count - 1].Groups[1].Value).TotalSeconds
+                                $currentTime = [TimeSpan]::Parse($timeMatch.Groups[1].Value).TotalSeconds
                                 $PBar.Value = [math]::Min(100.0, [math]::Round(($currentTime / $script:State.totalDuration) * 100))
                                 $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
-                                
-                                # Calculate ETA based on FFmpeg's output speed
-                                $speedMatches = [regex]::Matches($newText, "speed=\s*(\d+(?:\.\d+)?)x")
-                                if ($speedMatches.Count -gt 0) {
-                                    $speed = [double]::Parse($speedMatches[$speedMatches.Count - 1].Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture)
+
+                                $speedMatch = [regex]::Match($newText, "speed=\s*(\d+(?:\.\d+)?)x")
+                                if ($speedMatch.Success) {
+                                    $speed = [double]::Parse($speedMatch.Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture)
                                     if ($speed -gt 0) {
                                         $remainingSecs = ($script:State.totalDuration - $currentTime) / $speed
                                         $ts = [TimeSpan]::FromSeconds([math]::Max(0, $remainingSecs))
-                                        
-                                        if ($ts.TotalHours -ge 1) {
-                                            $TxtETA.Text = "ETA: {0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
-                                        } else {
-                                            $TxtETA.Text = "ETA: {0:D2}:{1:D2}" -f $ts.Minutes, $ts.Seconds
-                                        }
+                                        $TxtETA.Text = "ETA: " + (if ($ts.TotalHours -ge 1) { "{0:D2}:{1:D2}:{2:D2}" -f [int]$ts.TotalHours, $ts.Minutes, $ts.Seconds } else { "{0:D2}:{1:D2}" -f $ts.Minutes, $ts.Seconds })
                                     }
-                                } else {
-                                    # Fallback if FFmpeg hasn't calculated speed yet
-                                    $TxtETA.Text = "Status: Converting... ($($PBar.Value)%)"
-                                }
-                            } catch {}
+                                } else { $TxtETA.Text = "Status: Converting... ($($PBar.Value)%)" }
+                            } catch { $script:State.useFrameFallback = $true }
+                        }
+                        # FALLBACK: If time is N/A (common with -c:v copy), use frames + manual ETA
+                        elseif ($frameMatch.Success -and $script:State.totalFrames -gt 0) {
+                            $currentFrame = [int]$frameMatch.Groups[1].Value
+                            $percent = ($currentFrame / $script:State.totalFrames) * 100
+                            $PBar.Value = [math]::Min(100.0, [math]::Round($percent))
+                            $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
+
+                            # Calculate "Internal Speed" based on current frame vs job start time
+                            $elapsed = (Get-Date) - $job.JobStart
+                            if ($elapsed.TotalSeconds -gt 3 -and $currentFrame -gt 0) {
+                                $framesPerSec = $currentFrame / $elapsed.TotalSeconds
+                                $remainingFrames = $script:State.totalFrames - $currentFrame
+                                $remainingSecs = $remainingFrames / $framesPerSec
+                                $ts = [TimeSpan]::FromSeconds([math]::Max(0, $remainingSecs))
+                                
+                                $etaStr = if ($ts.TotalHours -ge 1) { "{0:D2}:{1:D2}:{2:D2}" -f [int]$ts.TotalHours, $ts.Minutes, $ts.Seconds } else { "{0:D2}:{1:D2}" -f $ts.Minutes, $ts.Seconds }
+                                $TxtETA.Text = "ETA: $etaStr"
+                            } else {
+                                $TxtETA.Text = "ETA: Calculating..."
+                            }
                         }
                     }
                 }
@@ -4011,7 +3998,7 @@ try {
                 }
                 # --------------------------------------------------
 
-$script:State.PlaylistChoice = $null
+                $script:State.PlaylistChoice = $null
                 $isBatch = ($linksToProcess.Count -gt 1)
 
                 # --- NEW CUSTOM PLAYLIST DIALOG FUNCTION ---
@@ -4629,7 +4616,19 @@ $script:State.PlaylistChoice = $null
                         $argsFull = (Get-FfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
                         $hasCustom = [bool]($V_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($V_CustomParams.Text))
 
-                        $script:State.BatchQueue += @{ Args = $argsFull; SafeArgs = $argsSafe; HasCustomParams = $hasCustom; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile }
+                        # THE CHANGE IS HERE: We added InputFile and JobStart inside the @{ } braces
+                        $script:State.BatchQueue += @{ 
+                            Args            = $argsFull
+                            SafeArgs        = $argsSafe
+                            HasCustomParams = $hasCustom
+                            Retried         = $false
+                            IsYtDlp         = $false
+                            OutputFile      = $outFile
+                            ListBox         = $list
+                            ListItem        = $inFile
+                            InputFile       = $inFile
+                            JobStart        = Get-Date
+                        }
                     }
                     elseif ($tabIndex -eq 2) { 
                         $rawFmt = Get-CbVal $I_CFormat
@@ -4728,6 +4727,8 @@ $script:State.PlaylistChoice = $null
             if ($null -ne $V_AudioDelay) { $V_AudioDelay.Text = "0.0" }
             if ($null -ne $V_SliderCRF) { $V_SliderCRF.Value = 23 }
             if ($null -ne $V_CheckTargetSize) { $V_CheckTargetSize.IsChecked = $false }
+            if ($null -ne $V_OutFilename) { $V_OutFilename.Clear() }
+            if ($null -ne $V_CheckSmartName) { $V_CheckSmartName.IsChecked = $false; $V_CheckSmartName.IsEnabled = $false }
 
             if ($null -ne $I_CFormat) { $I_CFormat.SelectedIndex = 0 }
             if ($null -ne $I_CRes) { $I_CRes.SelectedIndex = 0 }
