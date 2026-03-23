@@ -118,6 +118,39 @@ try {
     $script:TrayIcon.Icon = [System.Drawing.SystemIcons]::Information
     $script:TrayIcon.Visible = $true
 
+    # Setup Native Windows 10/11 Toast Notifications with fallback
+    function Show-Toast {
+        param([string]$Title, [string]$Message)
+        try {
+            # Safely load the native Windows Runtime APIs
+            $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+            $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
+            
+            $xmlString = @"
+<toast>
+    <visual>
+        <binding template="ToastGeneric">
+            <text>$Title</text>
+            <text>$Message</text>
+        </binding>
+    </visual>
+</toast>
+"@
+            $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+            $xml.LoadXml($xmlString)
+            $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+            
+            # Using the PowerShell executable's registered AppID to bypass strict Focus Assist rules
+            $appId = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe"
+            [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
+        } catch {
+            # Graceful fallback to the legacy balloon tip if WinRT fails
+            if ($script:TrayIcon) {
+                $script:TrayIcon.ShowBalloonTip(3000, $Title, $Message, [System.Windows.Forms.ToolTipIcon]::Info)
+            }
+        }
+    }
+
     # Global state object to track the active job queue, tool paths, and live log status
     $script:State = @{
         ffmpeg              = "ffmpeg.exe"
@@ -490,10 +523,18 @@ try {
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBox">
                         <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
-                            <ScrollViewer Focusable="false" Padding="{TemplateBinding Padding}">
-                                <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
-                            </ScrollViewer>
+                            <Grid>
+                                <TextBlock x:Name="WatermarkText" Text="&#x1F4C1; Drag &amp; Drop Media Here" Foreground="{DynamicResource MutedBrush}" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed"/>
+                                <ScrollViewer Focusable="false" Padding="{TemplateBinding Padding}">
+                                    <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                                </ScrollViewer>
+                            </Grid>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="WatermarkText" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -2343,10 +2384,8 @@ try {
                     $TaskbarProgress.ProgressState = "None"
                     Write-UpdLog "[UPDATE] Dependency update process finished."
                     
-                    # --- ADDED: Windows System Tray Notification ---
-                    if ($script:TrayIcon) {
-                        $script:TrayIcon.ShowBalloonTip(3000, "Media Converter Pro", "Dependency update process finished.", [System.Windows.Forms.ToolTipIcon]::Info)
-                    }
+                    # --- ADDED: Windows System Tray / Toast Notification ---
+                    Show-Toast -Title "Update Complete" -Message "Dependency update process finished."
                     # -----------------------------------------------
 
                     $BtnRun.IsEnabled = $true
@@ -3373,10 +3412,8 @@ try {
                 [System.Media.SystemSounds]::Asterisk.Play()
             }
             
-            if ($script:TrayIcon) {
-                $msg = if ($LogBox.Text -match "\[ERROR\]") { "Process finished with errors. Check the live log for details." } else { "All queued files were processed successfully!" }
-                $script:TrayIcon.ShowBalloonTip(3000, "Media Converter Pro", $msg, [System.Windows.Forms.ToolTipIcon]::Info)
-            }
+            $msg = if ($LogBox.Text -match "\[ERROR\]") { "Process finished with errors. Check the live log for details." } else { "All queued files were processed successfully!" }
+            Show-Toast -Title "Batch Complete" -Message $msg
             
             Save-Queue
             return
