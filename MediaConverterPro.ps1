@@ -583,28 +583,51 @@ try {
                                 <TabItem.Header><TextBlock Text="Filters &amp; Advanced"/></TabItem.Header>
                                 <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20" Focusable="True">
                                     <StackPanel Focusable="True">
-                                        <Grid>
+                                        <Grid Margin="0,0,0,15">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" Margin="10">
-                                                <TextBlock Text="Trim (Format: 00:00:00)" FontSize="13" Foreground="#EF4444" Margin="0,0,0,5"/>
-                                                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBox x:Name="A_TrimStart" Margin="0,0,5,0" Text="00:00:00"/><TextBox x:Name="A_TrimEnd" Grid.Column="1" Text="00:00:00"/></Grid>
-                                                <Grid Margin="0,5,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Slider x:Name="A_SliderTrimStart" Minimum="0" Maximum="0" Value="0" Margin="0,0,5,0" IsEnabled="False" ToolTip="Drag to set Start Time"/><Slider x:Name="A_SliderTrimEnd" Minimum="0" Maximum="0" Value="0" Grid.Column="1" IsEnabled="False" ToolTip="Drag to set End Time"/></Grid>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Margin="10">
-                                                <CheckBox x:Name="A_CheckNorm" Content="Normalize Audio (R128)" Margin="0,5,0,10" FontWeight="Bold"/>
-                                                <CheckBox x:Name="A_CheckExtract" Content="Extract Audio from Video (.mp4, .mkv)" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
-                                            </StackPanel>
+                                            
+                                            <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="15" Margin="0,0,10,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="Trim Audio" FontSize="14" FontWeight="Bold" Foreground="#EF4444" Margin="0,0,0,10"/>
+                                                    <Grid Margin="0,0,0,10">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                        <StackPanel Margin="0,0,5,0">
+                                                            <TextBlock Text="Start (00:00:00)" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,2"/>
+                                                            <TextBox x:Name="A_TrimStart" Text="00:00:00"/>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                                                            <TextBlock Text="End (00:00:00)" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,2"/>
+                                                            <TextBox x:Name="A_TrimEnd" Text="00:00:00"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                        <Slider x:Name="A_SliderTrimStart" Minimum="0" Maximum="0" Value="0" Margin="0,0,5,0" IsEnabled="False" ToolTip="Drag to set Start Time"/>
+                                                        <Slider x:Name="A_SliderTrimEnd" Minimum="0" Maximum="0" Value="0" Grid.Column="1" Margin="5,0,0,0" IsEnabled="False" ToolTip="Drag to set End Time"/>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="15" Margin="10,0,0,0">
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="Quick Operations" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                                                    <CheckBox x:Name="A_CheckNorm" Content="Normalize Audio (R128)" Margin="0,0,0,12" FontWeight="Bold"/>
+                                                    <CheckBox x:Name="A_CheckExtract" Content="Extract Audio from Video (.mp4, .mkv)" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
+                                                </StackPanel>
+                                            </Border>
                                         </Grid>
 
-                                        <StackPanel Margin="10,20,10,0">
-                                            <CheckBox x:Name="A_CheckCustomParams" Content="Add custom FFmpeg params (Live Preview)" FontWeight="Bold"/>
-                                            <StackPanel x:Name="A_CustomParamsPanel" Visibility="Collapsed" Margin="0,15,0,0">
-                                                <TextBlock Text="Final FFmpeg command preview:" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                <TextBox x:Name="A_ParamsPreview" IsReadOnly="True" TextWrapping="Wrap" Background="#0F172A" Foreground="#10B981" FontFamily="Consolas" FontSize="13" Padding="12" Margin="0,0,0,10" MinHeight="60"/>
-                                                <TextBlock Text="Add extra arguments (e.g. -af volume=2.0):" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                <TextBox x:Name="A_CustomParams"/>
+                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="15">
+                                            <StackPanel>
+                                                <CheckBox x:Name="A_CheckCustomParams" Content="Add custom FFmpeg params (Live Preview)" FontWeight="Bold"/>
+                                                <StackPanel x:Name="A_CustomParamsPanel" Visibility="Collapsed" Margin="0,15,0,0">
+                                                    <TextBlock Text="Final FFmpeg command preview:" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <TextBox x:Name="A_ParamsPreview" IsReadOnly="True" TextWrapping="Wrap" Background="#0F172A" Foreground="#10B981" FontFamily="Consolas" FontSize="13" Padding="12" Margin="0,0,0,10" MinHeight="60"/>
+                                                    <TextBlock Text="Add extra arguments (e.g. -af volume=2.0):" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <TextBox x:Name="A_CustomParams"/>
+                                                </StackPanel>
                                             </StackPanel>
-                                        </StackPanel>
+                                        </Border>
                                     </StackPanel>
                                 </Border>
                             </TabItem>
@@ -707,39 +730,76 @@ try {
                             <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Filters &amp; Editing"/></TabItem.Header>
                                 <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                                        
-                                        <StackPanel Grid.Row="0" Margin="10"><TextBlock Text="Resolution" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CRes" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>1080p (FHD)</ComboBoxItem><ComboBoxItem>720p (HD)</ComboBoxItem></ComboBox></StackPanel>
-                                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="10"><TextBlock Text="Framerate (FPS)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                            <ComboBox x:Name="V_CFPS" SelectedIndex="0">
-                                                <ComboBoxItem>Original</ComboBoxItem>
-                                                <ComboBoxItem>60 FPS</ComboBoxItem>
-                                                <ComboBoxItem>30 FPS</ComboBoxItem>
-                                                <ComboBoxItem>24 FPS (Cinematic)</ComboBoxItem>
-                                            </ComboBox>
-                                        </StackPanel>
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,15">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
 
-                                        <StackPanel Grid.Row="1" Margin="10"><TextBlock Text="Audio Tracks (Multi-Track)" FontSize="13" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold" Margin="0,0,0,5"/><ComboBox x:Name="V_CAudioTracks" SelectedIndex="0"><ComboBoxItem>Default Only (Track 1)</ComboBoxItem><ComboBoxItem>Keep ALL Tracks &amp; Subs</ComboBoxItem></ComboBox></StackPanel>
-                                        <StackPanel Grid.Row="1" Grid.Column="1" Margin="10"><TextBlock Text="Volume Booster" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CVol" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>Boost 150%</ComboBoxItem><ComboBoxItem>Normalize (EBU R128)</ComboBoxItem></ComboBox></StackPanel>
+                                            <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,0,10,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="Video Settings" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                                                    <StackPanel Margin="0,0,0,10"><TextBlock Text="Resolution" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CRes" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>1080p (FHD)</ComboBoxItem><ComboBoxItem>720p (HD)</ComboBoxItem></ComboBox></StackPanel>
+                                                    <StackPanel Margin="0,0,0,10"><TextBlock Text="Framerate (FPS)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                        <ComboBox x:Name="V_CFPS" SelectedIndex="0">
+                                                            <ComboBoxItem>Original</ComboBoxItem>
+                                                            <ComboBoxItem>60 FPS</ComboBoxItem>
+                                                            <ComboBoxItem>30 FPS</ComboBoxItem>
+                                                            <ComboBoxItem>24 FPS (Cinematic)</ComboBoxItem>
+                                                        </ComboBox>
+                                                    </StackPanel>
+                                                    <StackPanel><TextBlock Text="Video Speed" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CSpeed" SelectedIndex="0"><ComboBoxItem>Original (1.0x)</ComboBoxItem><ComboBoxItem>0.5x (Slow Motion)</ComboBoxItem><ComboBoxItem>1.25x (Fast)</ComboBoxItem><ComboBoxItem>1.5x (Faster)</ComboBoxItem><ComboBoxItem>2.0x (Very Fast)</ComboBoxItem></ComboBox></StackPanel>
+                                                </StackPanel>
+                                            </Border>
 
-                                        <StackPanel Grid.Row="2" Margin="10"><TextBlock Text="Video Speed" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CSpeed" SelectedIndex="0"><ComboBoxItem>Original (1.0x)</ComboBoxItem><ComboBoxItem>0.5x (Slow Motion)</ComboBoxItem><ComboBoxItem>1.25x (Fast)</ComboBoxItem><ComboBoxItem>1.5x (Faster)</ComboBoxItem><ComboBoxItem>2.0x (Very Fast)</ComboBoxItem></ComboBox></StackPanel>
-                                        <StackPanel Grid.Row="2" Grid.Column="1" Margin="10"><TextBlock Text="Audio Delay (Sec, e.g. 0.5 or -0.5)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><TextBox x:Name="V_AudioDelay" Text="0.0"/></StackPanel>
+                                            <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="10,0,0,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="Audio &amp; Subtitles" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                                                    <StackPanel Margin="0,0,0,10"><TextBlock Text="Audio Tracks (Multi-Track)" FontSize="13" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold" Margin="0,0,0,5"/><ComboBox x:Name="V_CAudioTracks" SelectedIndex="0"><ComboBoxItem>Default Only (Track 1)</ComboBoxItem><ComboBoxItem>Keep ALL Tracks &amp; Subs</ComboBoxItem></ComboBox></StackPanel>
+                                                    <Grid Margin="0,0,0,10">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                        <StackPanel Margin="0,0,5,0"><TextBlock Text="Volume" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CVol" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>Boost 150%</ComboBoxItem><ComboBoxItem>Normalize (EBU)</ComboBoxItem></ComboBox></StackPanel>
+                                                        <StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Delay (Sec)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><TextBox x:Name="V_AudioDelay" Text="0.0"/></StackPanel>
+                                                    </Grid>
+                                                    <StackPanel><TextBlock Text="Burn Subtitles (.srt)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="V_SubPath" IsReadOnly="True"/><Button x:Name="V_BtnSub" Grid.Column="1" Content="..." Width="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="5,0,0,0"/></Grid>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
 
-                                        <StackPanel Grid.Row="3" Margin="10"><TextBlock Text="Burn Subtitles (.srt)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="V_SubPath" IsReadOnly="True"/><Button x:Name="V_BtnSub" Grid.Column="1" Content="..." Width="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="5,0,0,0"/></Grid>
-                                        </StackPanel>
-                                        <StackPanel Grid.Row="3" Grid.Column="1" Margin="10">
-                                        <TextBlock Text="Trim (Format: 00:00:00)" FontSize="13" Foreground="#EF4444" Margin="0,0,0,5"/>
-                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBox x:Name="V_TrimStart" Margin="0,0,5,0" Text="00:00:00"/><TextBox x:Name="V_TrimEnd" Grid.Column="1" Text="00:00:00"/></Grid>
-                                        <Grid Margin="0,5,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Slider x:Name="V_SliderTrimStart" Minimum="0" Maximum="0" Value="0" Margin="0,0,5,0" IsEnabled="False" ToolTip="Drag to set Start Time"/><Slider x:Name="V_SliderTrimEnd" Minimum="0" Maximum="0" Value="0" Grid.Column="1" IsEnabled="False" ToolTip="Drag to set End Time"/></Grid>
-                                        <Button x:Name="V_BtnGenPreview" Content="Generate Visual Timeline" Margin="0,8,0,0" Height="28" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
-                                            <ScrollViewer x:Name="V_PreviewScroll" Height="120" Visibility="Collapsed" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" Margin="0,8,0,0">
-                                                <StackPanel x:Name="V_PreviewStack" Orientation="Horizontal"/>
-                                            </ScrollViewer>
-                                        </StackPanel>
-                                    </Grid>
+                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15">
+                                            <StackPanel>
+                                                <TextBlock Text="Timeline &amp; Trimming" FontWeight="Bold" Foreground="#EF4444" Margin="0,0,0,10"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="200"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    
+                                                    <StackPanel Grid.Column="0" Margin="0,0,15,0" VerticalAlignment="Center">
+                                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                            <StackPanel Margin="0,0,5,0"><TextBlock Text="Start" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,2"/><TextBox x:Name="V_TrimStart" Text="00:00:00"/></StackPanel>
+                                                            <StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="End" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,2"/><TextBox x:Name="V_TrimEnd" Text="00:00:00"/></StackPanel>
+                                                        </Grid>
+                                                        <Button x:Name="V_BtnGenPreview" Content="Generate Visual Timeline" Margin="0,15,0,0" Height="30" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand" FontWeight="Bold"/>
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                            <Slider x:Name="V_SliderTrimStart" Minimum="0" Maximum="0" Value="0" Margin="0,0,5,0" IsEnabled="False" ToolTip="Drag to set Start Time"/>
+                                                            <Slider x:Name="V_SliderTrimEnd" Minimum="0" Maximum="0" Value="0" Grid.Column="1" Margin="5,0,0,0" IsEnabled="False" ToolTip="Drag to set End Time"/>
+                                                        </Grid>
+                                                        <ScrollViewer x:Name="V_PreviewScroll" Height="120" Visibility="Collapsed" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" Margin="0,15,0,0">
+                                                            <StackPanel x:Name="V_PreviewStack" Orientation="Horizontal"/>
+                                                        </ScrollViewer>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
                                 </Border>
                             </TabItem>
 
@@ -822,12 +882,51 @@ try {
                                 <TabItem.Header><TextBlock Text="Conversion"/></TabItem.Header>
                                 <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
                                     <Grid>
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                                        <StackPanel Margin="10"><TextBlock Text="Format" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="I_CFormat" SelectedIndex="0"><ComboBoxItem>JPG</ComboBoxItem><ComboBoxItem>PNG</ComboBoxItem><ComboBoxItem>WEBP</ComboBoxItem><ComboBoxItem>ICO (Windows Icon)</ComboBoxItem><ComboBoxItem>HEIC</ComboBoxItem><ComboBoxItem>BMP</ComboBoxItem></ComboBox></StackPanel>
-                                        <StackPanel Grid.Column="1" Margin="10"><TextBlock Text="Quality (JPG/WEBP only)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="I_CQual" SelectedIndex="0"><ComboBoxItem>High (Default)</ComboBoxItem><ComboBoxItem>Medium</ComboBoxItem><ComboBoxItem>Low</ComboBoxItem></ComboBox></StackPanel>
-                                        <StackPanel Grid.Row="1" Margin="10"><TextBlock Text="Scaling" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="I_CRes" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>Max Width 1920px</ComboBoxItem><ComboBoxItem>Max Width 1280px</ComboBoxItem><ComboBoxItem>Max Width 800px</ComboBoxItem></ComboBox></StackPanel>
-                                        <CheckBox x:Name="I_CheckMeta" Grid.Row="1" Grid.Column="1" Content="Completely remove EXIF &amp; Metadata" Foreground="#EF4444" FontWeight="Bold" Margin="10,25,0,0"/>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,0,10,0">
+                                            <StackPanel>
+                                                <TextBlock Text="Encoding Settings" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                                                <StackPanel Margin="0,0,0,10">
+                                                    <TextBlock Text="Format" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <ComboBox x:Name="I_CFormat" SelectedIndex="0">
+                                                        <ComboBoxItem>JPG</ComboBoxItem>
+                                                        <ComboBoxItem>PNG</ComboBoxItem>
+                                                        <ComboBoxItem>WEBP</ComboBoxItem>
+                                                        <ComboBoxItem>ICO (Windows Icon)</ComboBoxItem>
+                                                        <ComboBoxItem>HEIC</ComboBoxItem>
+                                                        <ComboBoxItem>BMP</ComboBoxItem>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <StackPanel>
+                                                    <TextBlock Text="Quality (JPG/WEBP only)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <ComboBox x:Name="I_CQual" SelectedIndex="0">
+                                                        <ComboBoxItem>High (Default)</ComboBoxItem>
+                                                        <ComboBoxItem>Medium</ComboBoxItem>
+                                                        <ComboBoxItem>Low</ComboBoxItem>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="10,0,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="Adjustments" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                                                <StackPanel Margin="0,0,0,15">
+                                                    <TextBlock Text="Scaling" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <ComboBox x:Name="I_CRes" SelectedIndex="0">
+                                                        <ComboBoxItem>Original</ComboBoxItem>
+                                                        <ComboBoxItem>Max Width 1920px</ComboBoxItem>
+                                                        <ComboBoxItem>Max Width 1280px</ComboBoxItem>
+                                                        <ComboBoxItem>Max Width 800px</ComboBoxItem>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <CheckBox x:Name="I_CheckMeta" Content="Completely remove EXIF &amp; Metadata" Foreground="#EF4444" FontWeight="Bold" VerticalAlignment="Center" Margin="0,5,0,0"/>
+                                            </StackPanel>
+                                        </Border>
                                     </Grid>
                                 </Border>
                             </TabItem>
@@ -900,48 +999,57 @@ try {
                             <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Format &amp; Quality"/></TabItem.Header>
                                 <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
-                                    <StackPanel>
-                                        <Grid Margin="0,0,0,15">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                            <StackPanel Margin="10">
-                                                <TextBlock Text="Download Type" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                <ComboBox x:Name="Y_Type" SelectedIndex="0">
-                                                    <ComboBoxItem>Video</ComboBoxItem>
-                                                    <ComboBoxItem>Audio Only</ComboBoxItem>
-                                                </ComboBox>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Margin="10">
-                                                <TextBlock Text="Quality / Resolution" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                <ComboBox x:Name="Y_Res" SelectedIndex="0">
-                                                    <ComboBoxItem>Best Possible</ComboBoxItem>
-                                                    <ComboBoxItem>Max 1080p</ComboBoxItem>
-                                                    <ComboBoxItem>Max 720p</ComboBoxItem>
-                                                    <ComboBoxItem>Audio Only (Highest Quality)</ComboBoxItem>
-                                                </ComboBox>
-                                            </StackPanel>
-                                        </Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
 
-                                        <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                            <StackPanel Margin="10">
-                                                <TextBlock Text="Target Format (Video)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                <ComboBox x:Name="Y_VFormat" SelectedIndex="0">
-                                                    <ComboBoxItem>mp4</ComboBoxItem>
-                                                    <ComboBoxItem>mkv</ComboBoxItem>
-                                                    <ComboBoxItem>webm</ComboBoxItem>
-                                                </ComboBox>
+                                        <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,0,10,0">
+                                            <StackPanel>
+                                                <TextBlock Text="Media Request" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                                                <StackPanel Margin="0,0,0,15">
+                                                    <TextBlock Text="Download Type" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <ComboBox x:Name="Y_Type" SelectedIndex="0">
+                                                        <ComboBoxItem>Video</ComboBoxItem>
+                                                        <ComboBoxItem>Audio Only</ComboBoxItem>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <StackPanel>
+                                                    <TextBlock Text="Quality / Resolution" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <ComboBox x:Name="Y_Res" SelectedIndex="0">
+                                                        <ComboBoxItem>Best Possible</ComboBoxItem>
+                                                        <ComboBoxItem>Max 1080p</ComboBoxItem>
+                                                        <ComboBoxItem>Max 720p</ComboBoxItem>
+                                                        <ComboBoxItem>Audio Only (Highest Quality)</ComboBoxItem>
+                                                    </ComboBox>
+                                                </StackPanel>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="1" Margin="10">
-                                                <TextBlock Text="Target Format (Audio)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                <ComboBox x:Name="Y_AFormat" SelectedIndex="0">
-                                                    <ComboBoxItem>mp3</ComboBoxItem>
-                                                    <ComboBoxItem>m4a</ComboBoxItem>
-                                                    <ComboBoxItem>flac</ComboBoxItem>
-                                                    <ComboBoxItem>wav</ComboBoxItem>
-                                                </ComboBox>
+                                        </Border>
+
+                                        <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="10,0,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="Output Containers" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                                                <StackPanel Margin="0,0,0,15">
+                                                    <TextBlock Text="Target Format (Video)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <ComboBox x:Name="Y_VFormat" SelectedIndex="0">
+                                                        <ComboBoxItem>mp4</ComboBoxItem>
+                                                        <ComboBoxItem>mkv</ComboBoxItem>
+                                                        <ComboBoxItem>webm</ComboBoxItem>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <StackPanel>
+                                                    <TextBlock Text="Target Format (Audio)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <ComboBox x:Name="Y_AFormat" SelectedIndex="0">
+                                                        <ComboBoxItem>mp3</ComboBoxItem>
+                                                        <ComboBoxItem>m4a</ComboBoxItem>
+                                                        <ComboBoxItem>flac</ComboBoxItem>
+                                                        <ComboBoxItem>wav</ComboBoxItem>
+                                                    </ComboBox>
+                                                </StackPanel>
                                             </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
+                                        </Border>
+                                    </Grid>
                                 </Border>
                             </TabItem>
 
@@ -949,42 +1057,58 @@ try {
                                 <TabItem.Header><TextBlock Text="Auth &amp; Advanced"/></TabItem.Header>
                                 <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
                                     <StackPanel>
-                                        <WrapPanel Margin="10,0,0,15">
-                                            <CheckBox x:Name="Y_CheckMeta" Content="Embed Metadata &amp; Thumbnail" Margin="0,0,20,15" IsChecked="False"/>
-                                            <CheckBox x:Name="Y_CheckSubs" Content="Embed Subtitles" Margin="0,0,20,15"/>
-                                            <CheckBox x:Name="Y_CheckSponsor" Content="SponsorBlock (Skip Sponsors)" Margin="0,0,20,15"/>
-                                            <CheckBox x:Name="Y_CheckCustomParams" Content="Add custom yt-dlp params (Live Preview)" Margin="0,0,20,15" IsChecked="False"/>
-                                        </WrapPanel>
                                         
-                                        <StackPanel x:Name="Y_CustomParamsPanel" Visibility="Collapsed" Margin="10,0,10,20">
-                                            <TextBlock Text="Final yt-dlp command preview:" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                            <TextBox x:Name="Y_ParamsPreview" IsReadOnly="True" TextWrapping="Wrap" Background="#0F172A" Foreground="#10B981" FontFamily="Consolas" FontSize="13" Padding="12" Margin="0,0,0,10" MinHeight="60"/>
-                                            <TextBlock Text="Add extra arguments (e.g. --limit-rate 5M):" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                            <TextBox x:Name="Y_CustomParams"/>
-                                        </StackPanel>
+                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,0,0,15">
+                                            <StackPanel>
+                                                <TextBlock Text="Post-Processing" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                                                <WrapPanel>
+                                                    <CheckBox x:Name="Y_CheckMeta" Content="Embed Metadata &amp; Thumbnail" Margin="0,0,20,10" IsChecked="False"/>
+                                                    <CheckBox x:Name="Y_CheckSubs" Content="Embed Subtitles" Margin="0,0,20,10"/>
+                                                    <CheckBox x:Name="Y_CheckSponsor" Content="SponsorBlock (Skip Sponsors)" Margin="0,0,20,10"/>
+                                                </WrapPanel>
+                                            </StackPanel>
+                                        </Border>
 
-                                        <Grid Margin="10,0,10,15">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
-                                            <CheckBox x:Name="Y_CheckCookie" Content="Use Cookies: " VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                            <ComboBox x:Name="Y_CookieBrowser" Grid.Column="1" SelectedIndex="0" Width="100" Margin="0,0,15,0">
-                                                <ComboBoxItem>edge</ComboBoxItem>
-                                                <ComboBoxItem>chrome</ComboBoxItem>
-                                                <ComboBoxItem>firefox</ComboBoxItem>
-                                                <ComboBoxItem>opera</ComboBoxItem>
-                                                <ComboBoxItem>brave</ComboBoxItem>
-                                            </ComboBox>
-                                            <TextBox x:Name="Y_CookiePath" Grid.Column="2" Text="" ToolTip="Path to cookies.txt (Overrides Browser)" IsReadOnly="True" Cursor="Arrow"/>
-                                            <Button x:Name="Y_BtnCookie" Grid.Column="3" Content="Txt" Margin="10,0,0,0" Height="38" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" ToolTip="Select cookies.txt file manually"/>
-                                        </Grid>
+                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,0,0,15">
+                                            <StackPanel>
+                                                <TextBlock Text="Authentication &amp; Bot Bypass" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,15"/>
+                                                
+                                                <Grid Margin="0,0,0,15">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
+                                                    <CheckBox x:Name="Y_CheckCookie" Content="Use Cookies: " VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                                    <ComboBox x:Name="Y_CookieBrowser" Grid.Column="1" SelectedIndex="0" Width="100" Margin="0,0,15,0">
+                                                        <ComboBoxItem>edge</ComboBoxItem>
+                                                        <ComboBoxItem>chrome</ComboBoxItem>
+                                                        <ComboBoxItem>firefox</ComboBoxItem>
+                                                        <ComboBoxItem>opera</ComboBoxItem>
+                                                        <ComboBoxItem>brave</ComboBoxItem>
+                                                    </ComboBox>
+                                                    <TextBox x:Name="Y_CookiePath" Grid.Column="2" Text="" ToolTip="Path to cookies.txt (Overrides Browser)" IsReadOnly="True" Cursor="Arrow"/>
+                                                    <Button x:Name="Y_BtnCookie" Grid.Column="3" Content="Txt" Margin="10,0,0,0" Height="38" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" ToolTip="Select cookies.txt file manually"/>
+                                                </Grid>
 
-                                        <Grid Margin="10,10,10,0">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                            
-                                            <TextBlock Text="PO Token:" VerticalAlignment="Top" Margin="0,10,15,0" Foreground="{DynamicResource MutedBrush}" ToolTip="Proof of Origin Token (helps bypass bot blocks)"/>
-                                            <TextBox x:Name="Y_PoToken" Grid.Column="1" Height="60" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" ToolTip="Paste manual token here"/>
-                                            <CheckBox x:Name="Y_CheckAutoPoToken" Grid.Row="1" Grid.Column="1" Content="Auto-retrieve PO Token (Let yt-dlp handle it)" Margin="0,12,0,0" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"/>
-                                        </Grid>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                                    <TextBlock Text="PO Token:" VerticalAlignment="Top" Margin="0,10,15,0" Foreground="{DynamicResource MutedBrush}" ToolTip="Proof of Origin Token (helps bypass bot blocks)"/>
+                                                    <TextBox x:Name="Y_PoToken" Grid.Column="1" Height="60" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" ToolTip="Paste manual token here"/>
+                                                    <CheckBox x:Name="Y_CheckAutoPoToken" Grid.Row="1" Grid.Column="1" Content="Auto-retrieve PO Token (Let yt-dlp handle it)" Margin="0,10,0,0" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15">
+                                            <StackPanel>
+                                                <CheckBox x:Name="Y_CheckCustomParams" Content="Add custom yt-dlp params (Live Preview)" FontWeight="Bold" Margin="0,0,0,10" IsChecked="False"/>
+                                                <StackPanel x:Name="Y_CustomParamsPanel" Visibility="Collapsed">
+                                                    <TextBlock Text="Final yt-dlp command preview:" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <TextBox x:Name="Y_ParamsPreview" IsReadOnly="True" TextWrapping="Wrap" Background="#0F172A" Foreground="#10B981" FontFamily="Consolas" FontSize="13" Padding="12" Margin="0,0,0,10" MinHeight="60"/>
+                                                    <TextBlock Text="Add extra arguments (e.g. --limit-rate 5M):" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                                                    <TextBox x:Name="Y_CustomParams"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+
                                     </StackPanel>
                                 </Border>
                             </TabItem>
@@ -1372,7 +1496,9 @@ try {
                                 ($V_CHWAccel.Items[3] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = "Intel GPU support not detected."
                             }
                         }
-                        catch {}
+                        catch {
+                            Write-CrashLog "Hardware Acceleration Detection failed: $($_.Exception.Message)"
+                        }
                     } 
 
                     # 1. Background Pre-fetch for yt-dlp supported sites
@@ -1443,6 +1569,7 @@ try {
                                 Process-NextJob
                             }
                             catch {
+                                Write-CrashLog "Failed to parse/resume Queue. Corrupted JSON file? Error: $($_.Exception.Message)"
                                 [System.GC]::Collect()
                                 Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue
                             }
@@ -1758,7 +1885,7 @@ try {
 
     # Smart Filename Generator
     function Get-SmartVideoFilename([string]$inFile) {
-        if ([string]::IsNullOrWhiteSpace($inFile) -or $inFile -eq "C:\input_video.mp4") { return "output_video" }
+        if ([string]::IsNullOrWhiteSpace($inFile) -or $inFile -eq "[Preview_Video_Input]") { return "output_video" }
         $baseName = [System.IO.Path]::GetFileNameWithoutExtension($inFile)
         if ($script:State.CustomFilenames.ContainsKey($inFile)) { return $script:State.CustomFilenames[$inFile] }
 
@@ -1785,12 +1912,12 @@ try {
     # Function to build visual string representation for FFmpeg (Video) arguments
     function Update-FfmpegPreview {
         
-        $inFile = "C:\input_video.mp4"
+        $inFile = "[Preview_Video_Input]"
         if ($null -ne $V_InList.SelectedItem) { $inFile = $V_InList.SelectedItem.ToString() }
         elseif ($V_InList.Items.Count -gt 0) { $inFile = $V_InList.Items[0].ToString() }
 
         # Sync the UI Textbox to current item dynamically
-        if ($inFile -ne "C:\input_video.mp4") {
+        if ($inFile -ne "[Preview_Video_Input]") {
             $script:State.IsAutoUpdatingFilename = $true
             $V_OutFilename.Text = Get-SmartVideoFilename $inFile
             $script:State.IsAutoUpdatingFilename = $false
@@ -1799,7 +1926,10 @@ try {
         if (-not $V_CheckCustomParams.IsChecked) { return }
 
         $outDir = $V_OutDir.Text
-        if ([string]::IsNullOrWhiteSpace($outDir) -or $outDir -match "Select target") { $outDir = Join-Path $ScriptDir "convert\video" }
+        if ([string]::IsNullOrWhiteSpace($outDir) -or $outDir -match "Select target") { 
+            if ($inFile -ne "[Preview_Video_Input]") { $outDir = Split-Path $inFile -Parent }
+            else { $outDir = Join-Path $ScriptDir "convert\video" }
+        }
         $name = Get-SmartVideoFilename $inFile
         $fmt = (Get-CbVal $V_CFormat).ToLower()
         $outFile = Join-Path $outDir "$name.$fmt"
@@ -1859,13 +1989,16 @@ try {
     function Update-AudioFfmpegPreview {
         if (-not $A_CheckCustomParams.IsChecked) { return }
         
-        $inFile = "C:\input_audio.mp3"
+        $inFile = "[Preview_Audio_Input]"
         if ($null -ne $A_InList.SelectedItem) { $inFile = $A_InList.SelectedItem.ToString() }
         elseif ($A_InList.Items.Count -gt 0) { $inFile = $A_InList.Items[0].ToString() }
 
         $outDir = $A_OutDir.Text
-        if ([string]::IsNullOrWhiteSpace($outDir) -or $outDir -match "Select target") { $outDir = Join-Path $ScriptDir "convert\audio" }
-        $name = if ($inFile -ne "C:\input_audio.mp3") { [System.IO.Path]::GetFileNameWithoutExtension($inFile) } else { "output_audio" }
+        if ([string]::IsNullOrWhiteSpace($outDir) -or $outDir -match "Select target") { 
+            if ($inFile -ne "[Preview_Audio_Input]") { $outDir = Split-Path $inFile -Parent }
+            else { $outDir = Join-Path $ScriptDir "convert\audio" }
+        }
+        $name = if ($inFile -ne "[Preview_Audio_Input]") { [System.IO.Path]::GetFileNameWithoutExtension($inFile) } else { "output_audio" }
         $fmt = (Get-CbVal $A_CFormat).ToLower()
         $outFile = Join-Path $outDir "$name.$fmt"
         
@@ -2902,7 +3035,9 @@ try {
                 return $totalSecs
             }
         }
-        catch {}
+        catch {
+            Write-CrashLog "Get-MediaDuration Error processing '$FilePath': $($_.Exception.Message)"
+        }
         return 0
     }
 
@@ -3676,7 +3811,7 @@ try {
     
                 $baseOut = $M_OutFile.Text
                 if ([string]::IsNullOrWhiteSpace($baseOut)) {
-                    $outDir = Join-Path $ScriptDir "convert\muxed"
+                    $outDir = Split-Path $M_InVideo.Text -Parent
                     $baseTargetFile = Join-Path $outDir "$([System.IO.Path]::GetFileNameWithoutExtension($M_InVideo.Text))-muxed.mp4" 
                 }
                 else {
@@ -4032,9 +4167,6 @@ $script:State.PlaylistChoice = $null
                 if (-not $script:State.ffmpegFound) { [void][System.Windows.MessageBox]::Show("FFmpeg not found!", "Missing Tool", 0, 48); return }
                 
                 $subIdx = $SpecialSubTabs.SelectedIndex
-                $outDir = Join-Path $ScriptDir "special"
-                if (-not (Test-Path $outDir)) { [void](New-Item -ItemType Directory -Path $outDir -Force) }
-                $script:State.lastOutDir = $outDir
 
                 # AI Transcriber Sub-Tab
                 if ($subIdx -eq 0) {
@@ -4129,13 +4261,12 @@ $script:State.PlaylistChoice = $null
                         return 
                     }
                     
+                    $inFile = $S_ScribeIn.Text
                     $ts = Get-Date -Format "yyyyMMdd_HHmmss"
-                    $whisperOutDir = Join-Path $ScriptDir "special\transcribe\$ts"
+                    $whisperOutDir = Join-Path (Split-Path $inFile -Parent) "transcribe_$ts"
                     if (-not (Test-Path $whisperOutDir)) { [void](New-Item -ItemType Directory -Path $whisperOutDir -Force) }
                     
                     $script:State.lastOutDir = $whisperOutDir
-
-                    $inFile = $S_ScribeIn.Text
                     $outFormat = (Get-CbVal $S_ScribeFormat)
                     if ($outFormat -match "txt") { $outFormat = "txt" }
                     elseif ($outFormat -match "srt") { $outFormat = "srt" }
@@ -4199,6 +4330,8 @@ $script:State.PlaylistChoice = $null
                         [void][System.Windows.MessageBox]::Show("Please select a valid audio file!", "Error", 0, 48)
                         return 
                     }
+                    $outDir = Split-Path $S_VisAudio.Text -Parent
+                    $script:State.lastOutDir = $outDir
                     $outFile = Get-UniqueFileName (Join-Path $outDir "$([System.IO.Path]::GetFileNameWithoutExtension($S_VisAudio.Text))_visualizer.mp4")
                     
                     $filter = switch ($S_VisStyle.SelectedIndex) {
@@ -4222,6 +4355,8 @@ $script:State.PlaylistChoice = $null
                         return
                     }
 
+                    $outDir = Split-Path $S_StabIn.Text -Parent
+                    $script:State.lastOutDir = $outDir
                     $outFile = Get-UniqueFileName (Join-Path $outDir "STABILIZED_$([System.IO.Path]::GetFileName($S_StabIn.Text))")
                     
                     # 1. Just generate a unique filename (NO drive letter, NO colons, NO slashes)
@@ -4419,20 +4554,19 @@ $script:State.PlaylistChoice = $null
                 }
 
                 $baseOut = if ($tabIndex -eq 0) { $A_OutDir.Text } elseif ($tabIndex -eq 1) { $V_OutDir.Text } else { $I_OutDir.Text }
-                
-                if ($baseOut -match "target folder" -or [string]::IsNullOrWhiteSpace($baseOut)) { 
-                    if ($tabIndex -eq 0) { $outDir = Join-Path $ScriptDir "convert\audio" }
-                    elseif ($tabIndex -eq 1) { $outDir = Join-Path $ScriptDir "convert\video" }
-                    else { $outDir = Join-Path $ScriptDir "convert\image" }
-                } 
-                else {
-                    $outDir = $baseOut
-                }
-
-                if (-not (Test-Path $outDir)) { [void](New-Item -ItemType Directory -Path $outDir -Force) }
-                $script:State.lastOutDir = $outDir
+                $useSourceDir = ($baseOut -match "target folder" -or [string]::IsNullOrWhiteSpace($baseOut))
 
                 foreach ($inFile in $list.Items) {
+                    
+                    if ($useSourceDir) {
+                        $outDir = Split-Path $inFile -Parent
+                    } else {
+                        $outDir = $baseOut
+                    }
+
+                    if (-not (Test-Path $outDir)) { [void](New-Item -ItemType Directory -Path $outDir -Force) }
+                    $script:State.lastOutDir = $outDir
+
                     $name = [System.IO.Path]::GetFileNameWithoutExtension($inFile)
                     $argArray = @("-hide_banner", "-y")
             
