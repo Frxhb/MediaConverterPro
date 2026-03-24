@@ -741,7 +741,7 @@ try {
                                             <Grid Grid.Row="1">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <StackPanel Margin="10,0,5,0"><TextBlock Text="Video Codec" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                    <ComboBox x:Name="V_CCodec" SelectedIndex="0" ToolTip="Select 'Copy' to keep original video untouched.">
+                                                    <ComboBox x:Name="V_CCodec" SelectedIndex="3" ToolTip="Select 'Copy' to keep original video untouched.">
                                                         <ComboBoxItem>H.264 (AVC)</ComboBoxItem>
                                                         <ComboBoxItem>H.265 (HEVC)</ComboBoxItem>
                                                         <ComboBoxItem>AV1 (Next-Gen)</ComboBoxItem>
@@ -749,7 +749,7 @@ try {
                                                     </ComboBox>
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="1" Margin="5,0,5,0"><TextBlock Text="Audio Codec" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                    <ComboBox x:Name="V_CAudio" SelectedIndex="0" ToolTip="Select 'Copy' to keep original audio untouched.">
+                                                    <ComboBox x:Name="V_CAudio" SelectedIndex="3" ToolTip="Select 'Copy' to keep original audio untouched.">
                                                         <ComboBoxItem>AAC</ComboBoxItem>
                                                         <ComboBoxItem>AC3 (Dolby)</ComboBoxItem>
                                                         <ComboBoxItem>EAC3 (Dolby+)</ComboBoxItem>
@@ -757,7 +757,7 @@ try {
                                                     </ComboBox>
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2" Margin="5,0,10,0"><TextBlock Text="Subtitles" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                    <ComboBox x:Name="V_CSub" SelectedIndex="0" ToolTip="Choose how to handle existing subtitles.">
+                                                    <ComboBox x:Name="V_CSub" SelectedIndex="1" ToolTip="Choose how to handle existing subtitles.">
                                                         <ComboBoxItem>Remove Subs</ComboBoxItem>
                                                         <ComboBoxItem>Copy All Subs</ComboBoxItem>
                                                     </ComboBox>
@@ -797,7 +797,7 @@ try {
                                             <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="10,0,0,0">
                                                 <StackPanel>
                                                     <TextBlock Text="Audio &amp; Subtitles" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
-                                                    <StackPanel Margin="0,0,0,10"><TextBlock Text="Audio Tracks (Multi-Track)" FontSize="13" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold" Margin="0,0,0,5"/><ComboBox x:Name="V_CAudioTracks" SelectedIndex="0"><ComboBoxItem>Default Only (Track 1)</ComboBoxItem><ComboBoxItem>Keep ALL Tracks &amp; Subs</ComboBoxItem></ComboBox></StackPanel>
+                                                    <StackPanel Margin="0,0,0,10"><TextBlock Text="Audio Tracks (Multi-Track)" FontSize="13" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold" Margin="0,0,0,5"/><ComboBox x:Name="V_CAudioTracks" SelectedIndex="1"><ComboBoxItem>Default Only (Track 1)</ComboBoxItem><ComboBoxItem>Keep ALL Tracks &amp; Subs</ComboBoxItem></ComboBox></StackPanel>
                                                     <Grid Margin="0,0,0,10">
                                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                         <StackPanel Margin="0,0,5,0"><TextBlock Text="Volume" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CVol" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>Boost 150%</ComboBoxItem><ComboBoxItem>Normalize (EBU)</ComboBoxItem></ComboBox></StackPanel>
@@ -3429,7 +3429,7 @@ function Process-NextJob {
             # 2. Setup Tool Path
             $toolPath = if ($job.IsYtDlp) { $script:State.ytdlp } elseif ($job.CustomTool) { $job.CustomTool } else { $script:State.ffmpeg }
 
-            # 3. FAST FRAME PRE-FETCH (Prevents UI Hang on large files)
+            # 3. FAST FRAME PRE-FETCH & DURATION FETCH (Prevents UI Hang on large files)
             if (-not $job.IsYtDlp -and $script:State.ffprobeFound -and $job.InputFile -and (Test-Path -LiteralPath $job.InputFile)) {
                 try {
                     $pinfoF = New-Object System.Diagnostics.ProcessStartInfo
@@ -3441,7 +3441,21 @@ function Process-NextJob {
                         $fStr = $pFs.StandardOutput.ReadToEnd().Trim()
                         if ($fStr -match '^\d+$') { $script:State.totalFrames = [int]$fStr }
                     }
-                } catch { Write-CrashLog "Fast Frame pre-fetch failed: $($_.Exception.Message)" }
+
+                    # FIX: Fetch total duration safely before FFmpeg starts to guarantee ETA calc works
+                    $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+                    $pinfoDur.FileName = $script:State.ffprobe
+                    $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($job.InputFile)`""
+                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                    $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                    if ($pDur.WaitForExit(3000)) {
+                        $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+                        $d = 0.0
+                        if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$d) -and $d -gt 0) {
+                            $script:State.totalDuration = $d
+                        }
+                    }
+                } catch { Write-CrashLog "Fast Frame & Duration pre-fetch failed: $($_.Exception.Message)" }
             }
 
             # 4. Build Clean Arguments
@@ -3454,7 +3468,12 @@ function Process-NextJob {
             $argString = ""
             foreach ($arg in $rawArgs) {
                 $a = [string]$arg
-                if ($a -match ' ') { $argString += " `"$a`"" } else { $argString += " $a" }
+                # FIX: Explicitly quote any arguments containing spaces OR command-breaking characters like & 
+                if ($a -match ' ' -or $a -match '&' -or $a -match '\|' -or $a -match '<' -or $a -match '>') { 
+                    $argString += " `"$a`"" 
+                } else { 
+                    $argString += " $a" 
+                }
             }
 
             # 5. UI PUMP (Clears spinning icon)
@@ -3563,45 +3582,52 @@ function Process-NextJob {
                             catch {}
                         }
                     }
-                    # RESTORED: FFmpeg Progress Tracker with ETA Calculation
+# RESTORED & STRICT-TYPED: FFmpeg Progress Tracker with ETA Calculation
                     elseif ($script:State.totalDuration -gt 0) {
-                        # Flexible Regex for time (works with or without milliseconds) and frame fallback
-                        $timeMatch = [regex]::Match($newText, "time=\s*(\d{2}:\d{2}:\d{2}(?:\.\d+)?)")
-                        $frameMatch = [regex]::Match($newText, "frame=\s*(\d+)")
                         
-                        if ($timeMatch.Success -and $timeMatch.Groups[1].Value -ne "N/A") {
+                        $timeMatches = [regex]::Matches($newText, "time=\s*(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?")
+                        $frameMatches = [regex]::Matches($newText, "frame=\s*(\d+)")
+                        
+                        if ($timeMatches.Count -gt 0) {
                             try {
-                                $currentTime = [TimeSpan]::Parse($timeMatch.Groups[1].Value).TotalSeconds
+                                $lastTime = $timeMatches[$timeMatches.Count - 1]
+                                $h = [int]$lastTime.Groups[1].Value
+                                $m = [int]$lastTime.Groups[2].Value
+                                $s = [int]$lastTime.Groups[3].Value
+                                $ms = if ($lastTime.Groups[4].Success) { [int]($lastTime.Groups[4].Value.PadRight(3, '0').Substring(0,3)) } else { 0 }
+                                $currentTime = ($h * 3600) + ($m * 60) + $s + ($ms / 1000.0)
+                                
                                 $PBar.Value = [math]::Min(100.0, [math]::Round(($currentTime / $script:State.totalDuration) * 100))
                                 $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
 
-                                $speedMatch = [regex]::Match($newText, "speed=\s*(\d+(?:\.\d+)?)x")
-                                if ($speedMatch.Success) {
-                                    $speed = [double]::Parse($speedMatch.Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture)
+                                $speedMatches = [regex]::Matches($newText, "speed=\s*(\d+(?:\.\d+)?)x")
+                                if ($speedMatches.Count -gt 0) {
+                                    $speed = [double]::Parse($speedMatches[$speedMatches.Count - 1].Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture)
                                     if ($speed -gt 0) {
                                         $remainingSecs = ($script:State.totalDuration - $currentTime) / $speed
-                                        $ts = [TimeSpan]::FromSeconds([math]::Max(0, $remainingSecs))
-                                        $TxtETA.Text = "ETA: " + (if ($ts.TotalHours -ge 1) { "{0:D2}:{1:D2}:{2:D2}" -f [int]$ts.TotalHours, $ts.Minutes, $ts.Seconds } else { "{0:D2}:{1:D2}" -f $ts.Minutes, $ts.Seconds })
+                                        # FIX: Cast 0.0 as [double] to prevent .NET Math parameter mismatch crashes!
+                                        $ts = [TimeSpan]::FromSeconds([math]::Max([double]0.0, [double]$remainingSecs))
+                                        $TxtETA.Text = "ETA: " + (if ($ts.TotalHours -ge 1) { "{0:D2}:{1:D2}:{2:D2}" -f [int][math]::Floor($ts.TotalHours), $ts.Minutes, $ts.Seconds } else { "{0:D2}:{1:D2}" -f $ts.Minutes, $ts.Seconds })
                                     }
                                 } else { $TxtETA.Text = "Status: Converting... ($($PBar.Value)%)" }
-                            } catch { $script:State.useFrameFallback = $true }
+                            } catch { }
                         }
                         # FALLBACK: If time is N/A (common with -c:v copy), use frames + manual ETA
-                        elseif ($frameMatch.Success -and $script:State.totalFrames -gt 0) {
-                            $currentFrame = [int]$frameMatch.Groups[1].Value
+                        elseif ($frameMatches.Count -gt 0 -and $script:State.totalFrames -gt 0) {
+                            $currentFrame = [int]$frameMatches[$frameMatches.Count - 1].Groups[1].Value
                             $percent = ($currentFrame / $script:State.totalFrames) * 100
                             $PBar.Value = [math]::Min(100.0, [math]::Round($percent))
                             $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
 
-                            # Calculate "Internal Speed" based on current frame vs job start time
                             $elapsed = (Get-Date) - $job.JobStart
                             if ($elapsed.TotalSeconds -gt 3 -and $currentFrame -gt 0) {
                                 $framesPerSec = $currentFrame / $elapsed.TotalSeconds
                                 $remainingFrames = $script:State.totalFrames - $currentFrame
                                 $remainingSecs = $remainingFrames / $framesPerSec
-                                $ts = [TimeSpan]::FromSeconds([math]::Max(0, $remainingSecs))
+                                # FIX: Cast 0.0 as [double] here as well
+                                $ts = [TimeSpan]::FromSeconds([math]::Max([double]0.0, [double]$remainingSecs))
                                 
-                                $etaStr = if ($ts.TotalHours -ge 1) { "{0:D2}:{1:D2}:{2:D2}" -f [int]$ts.TotalHours, $ts.Minutes, $ts.Seconds } else { "{0:D2}:{1:D2}" -f $ts.Minutes, $ts.Seconds }
+                                $etaStr = if ($ts.TotalHours -ge 1) { "{0:D2}:{1:D2}:{2:D2}" -f [int][math]::Floor($ts.TotalHours), $ts.Minutes, $ts.Seconds } else { "{0:D2}:{1:D2}" -f $ts.Minutes, $ts.Seconds }
                                 $TxtETA.Text = "ETA: $etaStr"
                             } else {
                                 $TxtETA.Text = "ETA: Calculating..."
@@ -4715,6 +4741,14 @@ function Process-NextJob {
             if ($null -ne $A_CChan) { $A_CChan.SelectedIndex = 0 }
             if ($null -ne $A_CheckExtract) { $A_CheckExtract.IsChecked = $false }
             if ($null -ne $A_CheckNorm) { $A_CheckNorm.IsChecked = $false }
+
+            # --- UPDATED VIDEO DEFAULTS (Safe / Non-Destructive) ---
+            if ($null -ne $V_CFormat) { $V_CFormat.SelectedIndex = 1 } # Container: MKV (Safest for copying all streams)
+            if ($null -ne $V_CCodec) { $V_CCodec.SelectedIndex = 3 } # Video Codec: Copy
+            if ($null -ne $V_CAudio) { $V_CAudio.SelectedIndex = 3 } # Audio Codec: Copy
+            if ($null -ne $V_CSub) { $V_CSub.SelectedIndex = 1 } # Subtitles: Copy All
+            if ($null -ne $V_CAudioTracks) { $V_CAudioTracks.SelectedIndex = 1 } # Tracks: Keep All
+            # -------------------------------------------------------
             
             if ($null -ne $V_CFormat) { $V_CFormat.SelectedIndex = 1 }
             if ($null -ne $V_CCodec) { $V_CCodec.SelectedIndex = 0 }
