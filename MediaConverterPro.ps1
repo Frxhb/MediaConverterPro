@@ -163,6 +163,8 @@ try {
         ffmpegFound            = $false
         ffprobeFound           = $false
         ytdlpFound             = $false
+        handbrakecli           = "HandBrakeCLI.exe"
+        handbrakeFound         = $false
         jsRuntimeFound         = $false
         upscaylFound           = $false
         BatchQueue             = @()
@@ -188,14 +190,14 @@ try {
                 $cached = Get-Content $ConfigFile | ConvertFrom-Json
                 if ($cached.ffmpeg -and (Test-Path $cached.ffmpeg)) { $script:State.ffmpeg = $cached.ffmpeg; $script:State.ffmpegFound = $true }
                 if ($cached.ffprobe -and (Test-Path $cached.ffprobe)) { $script:State.ffprobe = $cached.ffprobe; $script:State.ffprobeFound = $true }
-                if ($cached.ytdlp -and (Test-Path $cached.ytdlp)) { $script:State.ytdlp = $cached.ytdlp; $script:State.ytdlpFound = $true; $script:isWinGetVersion = [bool]$cached.isWinGetVersion }
+                if ($cached.handbrakecli -and (Test-Path $cached.handbrakecli)) { $script:State.handbrakecli = $cached.handbrakecli; $script:State.handbrakeFound = $true }                 if ($cached.ytdlp -and (Test-Path $cached.ytdlp)) { $script:State.ytdlp = $cached.ytdlp; $script:State.ytdlpFound = $true; $script:isWinGetVersion = [bool]$cached.isWinGetVersion }
                 if ($cached.upscayl -and (Test-Path $cached.upscayl)) { 
                     $script:State.upscayl = $cached.upscayl; $script:State.upscaylModels = $cached.upscaylModels; $script:State.upscaylWorkDir = $cached.upscaylWorkDir; $script:State.upscaylFound = $true 
                 }
                 # Check for Node.js quickly
                 if ((Get-Command "node.exe" -ErrorAction SilentlyContinue) -or (Get-Command "deno.exe" -ErrorAction SilentlyContinue)) { $script:State.jsRuntimeFound = $true }
                 
-                if ($script:State.ffmpegFound -and $script:State.ytdlpFound) { return } # Skip the heavy loop if everything essential is found!
+                if ($script:State.ffmpegFound -and $script:State.handbrakeFound -and $script:State.ytdlpFound) { return } # Skip the heavy loop if everything essential is found!
             }
             catch {}
         }
@@ -258,6 +260,12 @@ try {
             $script:State.ffprobe = Join-Path $ScriptDir "ffprobe.exe"
             $script:State.ffprobeFound = $true
         }
+        $sysHb = Get-Command "HandBrakeCLI.exe" -ErrorAction SilentlyContinue
+        if ($sysHb) { $script:State.handbrakecli = $sysHb.Source; $script:State.handbrakeFound = $true }
+        elseif (-not $script:State.handbrakeFound -and (Test-Path (Join-Path $ScriptDir "HandBrakeCLI.exe"))) {
+            $script:State.handbrakecli = Join-Path $ScriptDir "HandBrakeCLI.exe"
+            $script:State.handbrakeFound = $true         
+        }
         
         # Attempt to locate the Upscayl binary (AI Image Upscaling)
         $script:State.upscaylFound = $false
@@ -309,7 +317,7 @@ try {
             # Append or update tool paths in the config object
             if ($script:State.ffmpegFound) { $cacheObj | Add-Member -MemberType NoteProperty -Name "ffmpeg" -Value $script:State.ffmpeg -Force }
             if ($script:State.ffprobeFound) { $cacheObj | Add-Member -MemberType NoteProperty -Name "ffprobe" -Value $script:State.ffprobe -Force }
-            if ($script:State.ytdlpFound) { 
+            if ($script:State.handbrakeFound) { $cacheObj | Add-Member -MemberType NoteProperty -Name "handbrakecli" -Value $script:State.handbrakecli -Force }             if ($script:State.ytdlpFound) { 
                 $cacheObj | Add-Member -MemberType NoteProperty -Name "ytdlp" -Value $script:State.ytdlp -Force 
                 $cacheObj | Add-Member -MemberType NoteProperty -Name "isWinGetVersion" -Value $script:isWinGetVersion -Force 
             }
@@ -845,13 +853,18 @@ try {
                                 </Border>
                             </TabItem>
 
-                            <TabItem Style="{StaticResource SubTabStyle}">
+<TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Advanced Quality"/></TabItem.Header>
                                 <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
                                     <StackPanel>
+                                        
                                         <Border Margin="10,0,10,15" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="15" CornerRadius="6">
                                             <Grid>
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="100"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="100"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
                                                 <CheckBox x:Name="V_CheckTargetSize" Content="Compress to exact target size (Overrides CRF): " VerticalAlignment="Center" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold"/>
                                                 <TextBox x:Name="V_TargetSizeMB" Grid.Column="1" Text="24.5" Margin="10,0,0,0" ToolTip="Target in MB (e.g. 24.5 for Discord)"/>
                                                 <TextBlock Grid.Column="2" Text="MB" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource MutedBrush}"/>
@@ -861,13 +874,21 @@ try {
                                         <StackPanel Margin="10,0,10,15">
                                             <TextBlock Text="Quality / CRF (Lower = Better, 23 = Default)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
                                             <Grid>
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="40"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="40"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
                                                 <Slider x:Name="V_SliderCRF" Minimum="0" Maximum="51" Value="23" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
                                                 <TextBlock x:Name="V_CRFText" Grid.Column="1" Text="23" TextAlignment="Center" VerticalAlignment="Center" FontSize="15" FontWeight="Bold"/>
                                                 <TextBlock x:Name="V_CRFDesc" Grid.Column="2" Text="Balanced (Standard)" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}"/>
                                             </Grid>
                                         </StackPanel>
 
+                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="10,0,10,15">
+                                            <CheckBox x:Name="V_UseHandbrake" Content="Use HandBrake Engine (Best for Audio Sync, VFR, and heavy compression)" FontWeight="Bold" Foreground="#10B981" ToolTip="Uses HandBrakeCLI instead of FFmpeg. Video/Audio Copy features are disabled."/>
+                                        </Border>
+                                        
                                         <StackPanel Margin="10,5,10,0">
                                             <CheckBox x:Name="V_CheckCustomParams" Content="Add custom FFmpeg params (Live Preview)" FontWeight="Bold"/>
                                             <StackPanel x:Name="V_CustomParamsPanel" Visibility="Collapsed" Margin="0,15,0,0">
@@ -877,6 +898,7 @@ try {
                                                 <TextBox x:Name="V_CustomParams"/>
                                             </StackPanel>
                                         </StackPanel>
+                                        
                                     </StackPanel>
                                 </Border>
                             </TabItem>
@@ -1353,7 +1375,7 @@ try {
                 <TextBlock x:Name="StatusText" Grid.Column="2" Text="Ready." TextAlignment="Right" Margin="5,0,0,0" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
             </Grid>
 
-            <Expander x:Name="ExpLog" Header="Live Log (Errors and Details)" Foreground="{DynamicResource MutedBrush}" FontWeight="SemiBold" FontSize="13" Margin="0,5,0,0">
+            <Expander x:Name="ExpLog" Header="Live Log (Errors and Details)" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource MutedBrush}" FontWeight="SemiBold" FontSize="13" Margin="0,5,0,0">
                 <TextBox x:Name="LogBox" Background="#0F172A" Foreground="#10B981" Height="150" IsReadOnly="True" VerticalScrollBarVisibility="Visible" FontFamily="Consolas" FontSize="14" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,10,0,0"/>
             </Expander>
         </StackPanel>
@@ -1377,7 +1399,8 @@ try {
         "Y_InputTabs", "Y_BatchFile", "Y_BtnBatchBrowse", "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
         "TabSpecial", "SpecialSubTabs", "S_VisAudio", "S_VisImg", "S_VisStyle", "S_BtnVisAud", "S_BtnVisImg", "S_StabIn", "S_BtnStabIn", "S_StabLevel",
         "S_ScribeIn", "S_BtnScribeIn", "S_ScribeLang", "S_CheckBurn", "S_ScribeFormat", "S_ScribeModel", "S_ScribeTask",
-        "TabSpecialUpscale", "S_UpscaleIn", "S_BtnUpscaleIn", "S_UpscaleModel", "S_UpscaleScale", "S_UpscaleOutDir", "S_BtnUpscaleOut"
+        "TabSpecialUpscale", "S_UpscaleIn", "S_BtnUpscaleIn", "S_UpscaleModel", "S_UpscaleScale", "S_UpscaleOutDir", "S_BtnUpscaleOut",
+        "V_UseHandbrake"
     )
     foreach ($element in $UIElements) { Set-Variable -Name $element -Value $window.FindName($element) -Scope Script }
 
@@ -1429,7 +1452,7 @@ try {
     function Check-Missing-Tools {
         Find-Tools
 
-        if ($script:State.ffmpegFound -and $script:isWinGetVersion -and $script:State.jsRuntimeFound) {
+        if ($script:State.ffmpegFound -and $script:State.handbrakeFound -and $script:isWinGetVersion -and $script:State.jsRuntimeFound) {
             $StatusText.Text = "Ready."
             $StatusText.Foreground = $window.Resources["TextBrush"]
             return
@@ -1463,6 +1486,7 @@ try {
 
         if (-not $script:isWinGetVersion) { $tbMsg.Inlines.Add("- yt-dlp (WinGet version) -> Missing`n") }
         if (-not $script:State.ffmpegFound) { $tbMsg.Inlines.Add("- FFmpeg -> Missing`n") }
+        if (-not $script:State.handbrakeFound) { $tbMsg.Inlines.Add("- HandBrakeCLI -> Missing`n") }
         if (-not $script:State.jsRuntimeFound) { $tbMsg.Inlines.Add("- Node.js / Deno -> Missing`n") }
 
         [void]$sp.Children.Add($tbMsg)
@@ -1491,20 +1515,31 @@ try {
             }
 
             $StatusText.Text = "Installing WinGet dependencies..."
-            
-            $ytProc = Start-Process winget -ArgumentList "install --id yt-dlp.yt-dlp --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
-            if ($ytProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("yt-dlp installation cancelled or failed.", "Installation Aborted", 0, 48); return }
 
-            $ffProc = Start-Process winget -ArgumentList "install --id Gyan.FFmpeg --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
-            if ($ffProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("FFmpeg installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+            if (-not $script:isWinGetVersion) {
+                $ytProc = Start-Process winget -ArgumentList "install --id yt-dlp.yt-dlp --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
+                if ($ytProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("yt-dlp installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+            }
 
-            $nodeProc = Start-Process winget -ArgumentList "install --id OpenJS.NodeJS --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
-            if ($nodeProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("Node.js installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+            if (-not $script:State.ffmpegFound) {
+                $ffProc = Start-Process winget -ArgumentList "install --id Gyan.FFmpeg --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
+                if ($ffProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("FFmpeg installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+            }
+
+            if (-not $script:State.handbrakeFound) {
+                $hbProc = Start-Process winget -ArgumentList "install --id HandBrake.HandBrake.CLI --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
+                if ($hbProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("HandBrakeCLI installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+            }
+
+            if (-not $script:State.jsRuntimeFound) {
+                $nodeProc = Start-Process winget -ArgumentList "install --id OpenJS.NodeJS --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
+                if ($nodeProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("Node.js installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+            }
         
             $env:PATH = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
             Find-Tools
         
-            if ($script:State.ffmpegFound -and $script:isWinGetVersion -and $script:State.jsRuntimeFound) {
+            if ($script:State.ffmpegFound -and $script:State.handbrakeFound -and $script:isWinGetVersion -and $script:State.jsRuntimeFound) {
                 $StatusText.Text = "WinGet Tools Ready."; $StatusText.Foreground = "#10B981"
                 [void][System.Windows.MessageBox]::Show("Dependencies successfully installed!", "Success", 0, 64)
             }
@@ -1927,6 +1962,54 @@ try {
         return @{ Args = $argList.ToArray(); UseDual = $useDualInput }
     }
 
+    function Get-HandbrakeArgs([string]$inFile, [string]$outFile) {
+        $argList = [System.Collections.Generic.List[string]]::new()
+        $argList.AddRange([string[]]@("-i", $inFile, "-o", $outFile))
+
+        # HandBrake Presets
+        $resCb = Get-CbVal $V_CRes
+        if ($resCb -match "1080p") { $argList.AddRange([string[]]@("--preset", "Fast 1080p30")) }
+        elseif ($resCb -match "720p") { $argList.AddRange([string[]]@("--preset", "Fast 720p30")) }
+        else { $argList.AddRange([string[]]@("--preset", "Super HQ 1080p30 Surround")) }
+
+        # Constant Quality
+        $argList.AddRange([string[]]@("-q", "$($V_SliderCRF.Value)"))
+
+        # Framerate Handing (Force CFR to fix sync issues)
+        $fpsCb = Get-CbVal $V_CFPS
+        if ($fpsCb -match "60") { $argList.AddRange([string[]]@("--rate", "60", "--cfr")) }
+        elseif ($fpsCb -match "30") { $argList.AddRange([string[]]@("--rate", "30", "--cfr")) }
+        elseif ($fpsCb -match "24") { $argList.AddRange([string[]]@("--rate", "24", "--cfr")) }
+        else { $argList.Add("--cfr") } # Always force constant framerate to fix phone video drift
+
+        # Hardware Acceleration & Codecs
+        $vCodecCb = Get-CbVal $V_CCodec
+        $hwCb = Get-CbVal $V_CHWAccel
+        
+        $enc = "x264"
+        if ($vCodecCb -match "H\.265") {
+            if ($hwCb -match "NVIDIA") { $enc = "nvenc_h265" } elseif ($hwCb -match "AMD") { $enc = "vce_h265" } elseif ($hwCb -match "Intel") { $enc = "qsv_h265" } else { $enc = "x265" }
+        }
+        elseif ($vCodecCb -match "AV1") {
+            if ($hwCb -match "Intel") { $enc = "qsv_av1" } else { $enc = "svt_av1" }
+        }
+        else {
+            if ($hwCb -match "NVIDIA") { $enc = "nvenc_h264" } elseif ($hwCb -match "AMD") { $enc = "vce_h264" } elseif ($hwCb -match "Intel") { $enc = "qsv_h264" }
+        }
+        $argList.AddRange([string[]]@("-e", $enc))
+
+        # Audio
+        $aCodecCb = Get-CbVal $V_CAudio
+        if ($aCodecCb -match "AC3" -or $aCodecCb -match "EAC3") { $argList.AddRange([string[]]@("-E", "ac3")) }
+        else { $argList.AddRange([string[]]@("-E", "av_aac")) }
+
+        # Format Container
+        if ($outFile -match "\.mkv$") { $argList.AddRange([string[]]@("-f", "mkv")) }
+        else { $argList.AddRange([string[]]@("-f", "av_mp4")) }
+
+        # HandBrake auto-crops by default, which is great.
+        return @{ Args = $argList.ToArray() }
+    }
     # Smart Filename Generator
     function Get-SmartVideoFilename([string]$inFile) {
         if ([string]::IsNullOrWhiteSpace($inFile) -or $inFile -eq "[Preview_Video_Input]") { return "output_video" }
@@ -2261,6 +2344,7 @@ try {
                 <TextBlock Text="Select tools to update:" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource AccentBrush}"/>
                 <CheckBox Name="ChkYt" Content="yt-dlp (YouTube Downloader)" IsChecked="True"/>
                 <CheckBox Name="ChkFFmpeg" Content="FFmpeg (Media Converter)" IsChecked="True"/>
+                <CheckBox Name="ChkHandbrake" Content="HandBrakeCLI (Video Encoder)" IsChecked="True"/>
                 <CheckBox Name="ChkNode" Content="Node.js (JS Runtime)" IsChecked="True"/>
                 <CheckBox Name="ChkWhisper" Content="Whisper AI (Python Package)" IsChecked="True"/>
                 <CheckBox Name="ChkUpscale" Content="AI Upscaler (Upscayl)" IsChecked="True"/>
@@ -2273,6 +2357,7 @@ try {
             $updWin.FindName("BtnStartUpdate").Add_Click({
                     $doYt = [bool]$updWin.FindName("ChkYt").IsChecked
                     $doFF = [bool]$updWin.FindName("ChkFFmpeg").IsChecked
+                    $doHb = [bool]$updWin.FindName("ChkHandbrake").IsChecked
                     $doNode = [bool]$updWin.FindName("ChkNode").IsChecked
                     $doWhisper = [bool]$updWin.FindName("ChkWhisper").IsChecked
                     $doUpscale = [bool]$updWin.FindName("ChkUpscale").IsChecked
@@ -2331,6 +2416,13 @@ try {
                         $PBar.Value = 40; Force-UIRefresh
                         $p = Start-Process winget -ArgumentList "upgrade --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
                         Log-UpdateResult "FFmpeg" $p
+                    }
+
+                    if ($doHb) {
+                        $StatusText.Text = "Updating HandBrake..."
+                        $PBar.Value = 50; Force-UIRefresh
+                        $p = Start-Process winget -ArgumentList "upgrade --id HandBrake.HandBrake.CLI --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
+                        Log-UpdateResult "HandBrake" $p
                     }
                     
                     if ($doNode) {
@@ -2399,7 +2491,7 @@ try {
         })
 
     # Button event for "Settings" - Generates UI for Theme, Threads, Defaults, etc.
-    $BtnSettings.Add_Click({
+$BtnSettings.Add_Click({
             [xml]$setXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -2467,7 +2559,7 @@ try {
                             <ContentPresenter x:Name="ContentSite" TextElement.Foreground="{TemplateBinding Foreground}" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" HorizontalAlignment="Left"/>
                             
                             <Popup x:Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False">
-                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Margin="0,4,0,0" MinWidth="{TemplateBinding ActualWidth}" MaxHeight="250">
+                                <Border Background="{DynamicResource CardBrush}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Margin="0,4,0,0" MinWidth="{TemplateBinding ActualWidth}" MaxHeight="250">
                                     <ScrollViewer Margin="2" SnapsToDevicePixels="True">
                                         <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
                                     </ScrollViewer>
@@ -3549,6 +3641,19 @@ try {
                         }
                         if ($newText -match "NUMBER_OF_FRAMES\s*:\s*(\d+)") {
                             try { if ($null -eq $script:State.totalFrames -or $script:State.totalFrames -eq 0) { $script:State.totalFrames = [int]$matches[1] } } catch {}
+                        }
+
+                        if ($job.CustomTool -match "HandBrakeCLI") {
+                            $hbMatches = [regex]::Matches($newText, "Encoding: task \d+ of \d+, (\d+\.\d+) %")
+                            if ($hbMatches.Count -gt 0) {
+                                try {
+                                    $PBar.Value = [math]::Min(100.0, [double]::Parse($hbMatches[$hbMatches.Count - 1].Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture))
+                                    $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
+                                    
+                                    $hbEta = [regex]::Matches($newText, "ETA ([\dhms]+)")
+                                    if ($hbEta.Count -gt 0) { $TxtETA.Text = "ETA: " + $hbEta[$hbEta.Count - 1].Groups[1].Value }
+                                } catch {}
+                            }
                         }
 
                         if ($job.IsYtDlp) {
@@ -4682,24 +4787,35 @@ try {
                         $script:State.BatchQueue += @{ Args = $argsFull; SafeArgs = $argsSafe; HasCustomParams = $hasCustom; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile }
                     }
                     elseif ($tabIndex -eq 1) { 
-
                         $fmtRaw = Get-CbVal $V_CFormat
                         $fmt = if ([string]::IsNullOrWhiteSpace($fmtRaw)) { "mp4" } else { $fmtRaw.ToLower() }
                         
                         $smartName = Get-SmartVideoFilename $inFile
                         $outFile = Get-UniqueFileName (Join-Path $outDir "$smartName.$fmt")
 
-                        $argsSafe = (Get-FfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $true).Args
-                        $argsFull = (Get-FfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
-                        $hasCustom = [bool]($V_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($V_CustomParams.Text))
+                        # --- HANDBRAKE ROUTING LOGIC ---
+                        $vCodecCb = Get-CbVal $V_CCodec
+                        if ($V_UseHandbrake.IsChecked -and $script:State.handbrakeFound -and $vCodecCb -notmatch "Copy") {
+                            $argsFull = (Get-HandbrakeArgs -inFile $inFile -outFile $outFile).Args
+                            $hasCustom = $false
+                            $targetTool = $script:State.handbrakecli
+                        }
+                        else {
+                            if ($V_UseHandbrake.IsChecked -and -not $script:State.handbrakeFound) {
+                                [void][System.Windows.MessageBox]::Show("HandBrake CLI not found! Falling back to FFmpeg.", "Missing Tool", 0, 48)
+                            }
+                            $argsFull = (Get-FfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
+                            $hasCustom = [bool]($V_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($V_CustomParams.Text))
+                            $targetTool = "" # Defaults to FFmpeg in the runner loop
+                        }
 
-                        # THE CHANGE IS HERE: We added InputFile and JobStart inside the @{ } braces
                         $script:State.BatchQueue += @{ 
                             Args            = $argsFull
-                            SafeArgs        = $argsSafe
+                            SafeArgs        = $argsFull
                             HasCustomParams = $hasCustom
                             Retried         = $false
                             IsYtDlp         = $false
+                            CustomTool      = $targetTool
                             OutputFile      = $outFile
                             ListBox         = $list
                             ListItem        = $inFile
@@ -4785,6 +4901,7 @@ try {
             if ($null -ne $S_UpscaleScale) { $S_UpscaleScale.SelectedIndex = 2 }
             if ($null -ne $S_UpscaleOutDir) { $S_UpscaleOutDir.Text = "Select target folder..." }
             if ($null -ne $S_CheckBurn) { $S_CheckBurn.IsChecked = $false }
+            if ($null -ne $V_UseHandbrake) { $V_UseHandbrake.IsChecked = $false }
     
             # Reset Audio/Video/Image Settings
             if ($null -ne $A_CFormat) { $A_CFormat.SelectedIndex = 0 }

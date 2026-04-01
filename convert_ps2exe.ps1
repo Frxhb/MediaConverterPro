@@ -1,5 +1,27 @@
 #Clear-Host
-Import-Module ps2exe -ErrorAction Stop
+# Check if the PS2EXE module is available, if not, asks the user to automatically install it from the PowerShell Gallery
+if (-not (Get-Module -ListAvailable -Name ps2exe)) {
+    Write-Host "The PS2EXE module is not installed. Would you like to install it now? (Y/N)" -ForegroundColor Yellow
+    $response = Read-Host
+    if ($response -eq 'Y' -or $response -eq 'y') {
+        try {
+            Install-Module -Name ps2exe -Scope CurrentUser -Force
+            Write-Host "PS2EXE module installed successfully." -ForegroundColor Green
+        } catch {
+            Write-Host "Failed to install PS2EXE module. Please install it manually from the PowerShell Gallery." -ForegroundColor Red
+            return
+        }
+    } else {
+        Write-Host "PS2EXE module is required to compile the script. Exiting." -ForegroundColor Red
+        return
+    }
+}
+# check again if the module is now available after the installation attempt. if yes, continue, if no, exit with error message
+if (-not (Get-Module -ListAvailable -Name ps2exe)) {
+    Write-Host "PS2EXE module is still not available. Please ensure it is installed correctly and try again." -ForegroundColor Red
+    return  
+}
+
 
 # Dynamically set the path to the current folder where this script is running
 $currentDir = $PSScriptRoot
