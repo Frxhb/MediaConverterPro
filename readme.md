@@ -12,7 +12,7 @@ Media Converter Pro is a high-performance, all-in-one media management suite �
 - **Smart Normalization:** Integrated EBU R128 loudness correction.
 - **Extract & Save:** Pull high-quality audio from any video container.
 
-### 📹 Video Engineering
+### 📹 Video Engineering (ffmpeg and handbrake)
 - **Next-Gen Codecs:** Support for H.264, H.265 (HEVC), and AV1.
 - **⚡ GPU Acceleration:** Native support for NVIDIA (NVENC), AMD (AMF), and Intel (QSV).
 - **Target Size Logic:** Auto-calculate bitrates for Discord (25MB) or WhatsApp targets.
@@ -42,6 +42,7 @@ Media Converter Pro features a **Smart Auto-Installer**. If tools are missing, t
 
 * **[FFmpeg](https://ffmpeg.org/):** The core media engine.
 * **[yt-dlp](https://github.com/yt-dlp/yt-dlp):** For web extraction.
+* **[Handbrake](https://github.com/handbrake/handbrake):** for video convert.
 * **[Node.js](https://nodejs.org/):** For YouTube signature decryption.
 * **[Python](https://www.python.org/):** Required for Whisper AI features.
 
