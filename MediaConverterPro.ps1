@@ -59,10 +59,9 @@ $handle = (Get-Process -Id $pid).MainWindowHandle
 [void]$winApi::ChangeWindowMessageFilterEx($handle, $WM_COPYGLOBALDATA, $MSGFLT_ALLOW, [IntPtr]::Zero)
 
 # Determine the directory where this script resides to establish a working path
-if ($MyInvocation.MyCommand.Path) {
-    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-}
-else {
+$ScriptDir = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($ScriptDir)) { 
+    # Fallback if running from ISE or as a compiled executable
     $ScriptDir = [System.IO.Path]::GetDirectoryName([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
 }
 if ([string]::IsNullOrWhiteSpace($ScriptDir)) { $ScriptDir = $PWD.Path }
@@ -83,9 +82,17 @@ $QueueFile = Join-Path $ConfigDir "mcp_queue.json"
 $CrashLog = Join-Path $LogDir "crash.log"
 $ConvertLog = Join-Path $LogDir "convert.log"
 
-# Helper functions for logging application events and errors (Thread/Lock safe)
-function Write-CrashLog { param([string]$Message); try { Add-Content -Path $CrashLog -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] ERROR: $Message" -ErrorAction Stop } catch {} }
-function Write-ConvertLog { param([string]$Message); try { Add-Content -Path $ConvertLog -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message" -ErrorAction Stop } catch {} }
+# Helper functions for logging application events and errors (Thread/Lock safe via retry loop)
+function Write-CrashLog { 
+    param([string]$Message)
+    $entry = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] ERROR: $Message`r`n"
+    for ($i = 0; $i -lt 3; $i++) { try { [System.IO.File]::AppendAllText($CrashLog, $entry); break } catch { Start-Sleep -Milliseconds 50 } }
+}
+function Write-ConvertLog { 
+    param([string]$Message)
+    $entry = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message`r`n"
+    for ($i = 0; $i -lt 3; $i++) { try { [System.IO.File]::AppendAllText($ConvertLog, $entry); break } catch { Start-Sleep -Milliseconds 50 } }
+}
 
 # Function to generate a unique filename to prevent overwriting existing files
 function Get-UniqueFileName ([string]$FilePath) {
@@ -113,10 +120,11 @@ try {
     # Load required .NET assemblies for WPF and Windows Forms
     Add-Type -AssemblyName PresentationFramework, System.Windows.Forms, System.Drawing, Microsoft.VisualBasic
 
-    # Setup System Tray Notification Icon
+    # Setup System Tray Notification Icon (Events are bound later after UI loads)
     $script:TrayIcon = New-Object System.Windows.Forms.NotifyIcon
     $script:TrayIcon.Icon = [System.Drawing.SystemIcons]::Information
     $script:TrayIcon.Visible = $true
+    $script:TrayIcon.Text = "Media Converter Pro"
 
     # Setup Native Windows 10/11 Toast Notifications with fallback
     function Show-Toast {
@@ -1624,7 +1632,10 @@ try {
                         $ans = [System.Windows.MessageBox]::Show("Unfinished jobs were found from a previous session.`n`nWould you like to resume processing them?", "Resume Queue", "YesNo", 32)
                         if ($ans -eq "Yes") {
                             try {
-                                $savedQueue = Get-Content $QueueFile -Raw | ConvertFrom-Json
+                                $rawContent = Get-Content $QueueFile -Raw
+                                if ([string]::IsNullOrWhiteSpace($rawContent)) { throw "Queue file is empty." }
+                                $savedQueue = $rawContent | ConvertFrom-Json
+                                if ($null -eq $savedQueue) { throw "Queue file is invalid." }
                                 foreach ($sq in $savedQueue) {
                                     $script:State.BatchQueue += @{
                                         Args            = [string[]]$sq.Args
@@ -2158,6 +2169,20 @@ try {
     # ==============================================================================
     # 7. EVENT BINDING (User Interface Interactions)
     # ==============================================================================
+
+    # Restore from tray on double click
+    $script:TrayIcon.add_DoubleClick({
+        $window.Show()
+        $window.WindowState = [System.Windows.WindowState]::Normal
+        $window.Activate()
+    })
+
+    # Map the window minimize button to hide the app into the tray
+    $window.Add_StateChanged({
+        if ($window.WindowState -eq [System.Windows.WindowState]::Minimized) {
+            $window.Hide()
+        }
+    })
 
     # Update previews when user selections change
     $A_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { Update-AudioFfmpegPreview })
@@ -2978,6 +3003,7 @@ $BtnSettings.Add_Click({
                     $pinfo.UseShellExecute = $false; $pinfo.CreateNoWindow = $true
                     $p = [System.Diagnostics.Process]::Start($pinfo)
                     $p.WaitForExit()
+                    $p.Dispose()
 
                     if (Test-Path $outThumb) {
                         $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
@@ -3041,12 +3067,13 @@ $BtnSettings.Add_Click({
             $pinfo = New-Object System.Diagnostics.ProcessStartInfo
             $pinfo.FileName = if ($script:State.ffprobeFound) { $script:State.ffprobe } else { $script:State.ffmpeg }
             
-            # FIX 1: Use the -f format operator to prevent PowerShell from expanding $ characters in the path
+            # Use the -f format operator to prevent PowerShell from expanding $ characters in the path
+            $safePath = $FilePath.Replace('"', '\"')
             if ($script:State.ffprobeFound) { 
-                $pinfo.Arguments = '-v quiet -print_format json -show_format -show_streams "{0}"' -f $FilePath
+                $pinfo.Arguments = '-v quiet -print_format json -show_format -show_streams "{0}"' -f $safePath
             }
             else {
-                $pinfo.Arguments = '-hide_banner -i "{0}"' -f $FilePath
+                $pinfo.Arguments = '-hide_banner -i "{0}"' -f $safePath
             }
 
             $pinfo.UseShellExecute = $false
@@ -3060,8 +3087,15 @@ $BtnSettings.Add_Click({
             $stdOutTask = $p.StandardOutput.ReadToEndAsync()
             $stdErrTask = $p.StandardError.ReadToEndAsync()
             
-            # Wait for the tool to finish with a 10-second safety timeout
-            if (-not $p.WaitForExit(10000)) {
+            # Keep UI responsive by checking process exit status in a non-blocking loop
+            $timeout = (Get-Date).AddSeconds(10)
+            while (-not $p.HasExited) {
+                [System.Windows.Forms.Application]::DoEvents()
+                Start-Sleep -Milliseconds 50
+                if ((Get-Date) -gt $timeout) { break }
+            }
+
+            if (-not $p.HasExited) {
                 try { $p.Kill() } catch {}
                 $infoText = "Error: Tool timed out while reading file metadata."
             }
@@ -3452,12 +3486,12 @@ $BtnSettings.Add_Click({
 
     # Completely terminate a process and its child processes
     function Kill-ProcessTree($proc) {
-        if ($proc -and -not $proc.HasExited) {
-            try { 
+        try {
+            if ($null -ne $proc -and -not $proc.HasExited) {
                 [void](Start-Process "taskkill.exe" -ArgumentList "/PID $($proc.Id) /T /F" -WindowStyle Hidden -Wait)
-            } 
-            catch { try { $proc.Kill() } catch {} }
-        }
+            }
+        } 
+        catch { try { $proc.Kill() } catch {} }
     }
     
     # Core loop logic for parsing the global task queue
@@ -3545,8 +3579,8 @@ $BtnSettings.Add_Click({
                     $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($job.InputFile)`""
                     $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
                     $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                    $durStr = $pDur.StandardOutput.ReadToEnd().Trim() # FIX: Read before waiting to prevent buffer deadlocks
                     if ($pDur.WaitForExit(3000)) {
-                        $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
                         $d = 0.0
                         if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$d) -and $d -gt 0) {
                             $script:State.totalDuration = $d
@@ -3566,9 +3600,10 @@ $BtnSettings.Add_Click({
             $argString = ""
             foreach ($arg in $rawArgs) {
                 $a = [string]$arg
-                # FIX: Explicitly quote any arguments containing spaces OR command-breaking characters like & 
-                if ($a -match ' ' -or $a -match '&' -or $a -match '\|' -or $a -match '<' -or $a -match '>') { 
-                    $argString += " `"$a`"" 
+                # FIX: Robustly quote arguments and escape existing quotes to prevent command injection
+                if ($a -match '[ &|<>]') {
+                    $escaped = $a -replace '"', '\"'
+                    $argString += " `"$escaped`"" 
                 }
                 else { 
                     $argString += " $a" 
@@ -4049,9 +4084,13 @@ $BtnSettings.Add_Click({
                     }
                     
                     # Read text file, ignore empty lines and comments starting with #
-                    $lines = Get-Content -LiteralPath $batchPath
-                    foreach ($line in $lines) {
-                        $l = $line.Trim()
+                    try {
+                        $lines = Get-Content -LiteralPath $batchPath -ErrorAction Stop
+                    } catch {
+                        [void][System.Windows.MessageBox]::Show("Could not read batch file. It may be open in another program.`n`n$($_.Exception.Message)", "File Error", 0, 16)
+                        return
+                    }
+                    foreach ($line in $lines) {                        $l = $line.Trim()
                         if (-not [string]::IsNullOrWhiteSpace($l) -and $l -notmatch "^#" -and $l -match "^(https?://|www\.)") {
                             $linksToProcess.Add($l)
                         }
@@ -4959,7 +4998,16 @@ $BtnSettings.Add_Click({
             if ($null -ne $StatusText) { $StatusText.Text = "Ready."; $StatusText.Foreground = $window.Resources["TextBrush"] }
             if ($null -ne $BtnShow) { $BtnShow.Visibility = "Collapsed" }
 
-            $LogBox.AppendText("[RESET] All fields and queues have been cleared.`r`n")
+            $LogBox.AppendText("[RESET] All fields and queues have been cleared. Attention: Log will be cleared in 1 second.`r`n")
+            
+            # Use a script-scoped DispatcherTimer so it survives the button click ending
+            $script:resetTimer = New-Object System.Windows.Threading.DispatcherTimer
+            $script:resetTimer.Interval = [TimeSpan]::FromSeconds(1) # Delay to ensure any pending UI updates are flushed before clearing the log
+            $script:resetTimer.Add_Tick({
+                $script:resetTimer.Stop() # Now it securely knows what to stop
+                $LogBox.Clear()
+            })
+            $script:resetTimer.Start()
         })
 
     # Terminates queue safely and clears uncompleted outputs to avoid data leaks
