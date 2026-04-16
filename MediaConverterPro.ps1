@@ -335,8 +335,14 @@ try {
                 $cacheObj | Add-Member -MemberType NoteProperty -Name "upscaylWorkDir" -Value $script:State.upscaylWorkDir -Force
             }
 
-            # Save silently to avoid interrupting startup
-            try { $cacheObj | ConvertTo-Json -Depth 5 | Set-Content $ConfigFile -Encoding UTF8 -Force } catch {}
+            # Save silently only if the cache was actually updated to prevent SSD wear and I/O latency
+            try { 
+                $newJson = $cacheObj | ConvertTo-Json -Depth 5 
+                $oldJson = if (Test-Path $ConfigFile) { Get-Content $ConfigFile -Raw } else { "" }
+                if ($newJson -ne $oldJson) {
+                    Set-Content $ConfigFile -Value $newJson -Encoding UTF8 -Force 
+                }
+            } catch {}
         }
         # ------------------------------
     }
@@ -1814,6 +1820,12 @@ try {
         $argList = [System.Collections.Generic.List[string]]::new()
         $argList.AddRange([string[]]@("-hide_banner", "-y"))
 
+        # Enable Hardware Decoding to alleviate CPU bottlenecking
+        $hwCb = Get-CbVal $V_CHWAccel
+        if ($hwCb -match "NVIDIA") { $argList.AddRange([string[]]@("-hwaccel", "cuda")) }
+        elseif ($hwCb -match "Intel") { $argList.AddRange([string[]]@("-hwaccel", "qsv")) }
+        elseif ($hwCb -match "AMD") { $argList.AddRange([string[]]@("-hwaccel", "d3d11va")) }
+
         # Safely parse and enforce that End Time is strictly greater than Start Time
         $startStr = $V_TrimStart.Text; $endStr = $V_TrimEnd.Text
         $startTs = [TimeSpan]::Zero; $endTs = [TimeSpan]::Zero
@@ -3087,10 +3099,15 @@ $BtnSettings.Add_Click({
             $stdOutTask = $p.StandardOutput.ReadToEndAsync()
             $stdErrTask = $p.StandardError.ReadToEndAsync()
             
-            # Keep UI responsive by checking process exit status in a non-blocking loop
+            # Keep UI responsive using native WPF Dispatcher frames (Avoids WinForms memory leaks)
             $timeout = (Get-Date).AddSeconds(10)
             while (-not $p.HasExited) {
-                [System.Windows.Forms.Application]::DoEvents()
+                $frame = New-Object System.Windows.Threading.DispatcherFrame
+                [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
+                    [System.Windows.Threading.DispatcherPriority]::Background,
+                    [Action]{ $frame.Continue = $false }
+                ) | Out-Null
+                [System.Windows.Threading.Dispatcher]::PushFrame($frame)
                 Start-Sleep -Milliseconds 50
                 if ((Get-Date) -gt $timeout) { break }
             }
@@ -3664,6 +3681,12 @@ $BtnSettings.Add_Click({
 
                     if (-not [string]::IsNullOrEmpty($newText)) {
                         $LogBox.AppendText($newText)
+                        
+                        # Prevent memory leaks and UI freezing during massive FFmpeg/yt-dlp logs
+                        if ($LogBox.Text.Length -gt 50000) {
+                            $LogBox.Text = $LogBox.Text.Substring($LogBox.Text.Length - 40000)
+                        }
+
                         if ($CbAutoScrollLog.IsChecked) {
                             $LogBox.ScrollToEnd()
                         }
@@ -4063,7 +4086,7 @@ $BtnSettings.Add_Click({
                 $script:State.lastOutDir = $outDir
                 $targetFile = Get-UniqueFileName $baseTargetFile
         
-                $argArray = @("-hide_banner", "-y", "-i", $M_InVideo.Text, "-i", $M_InAudio.Text, "-c", "copy", "-map", "0:v:0", "-map", "1:a:0", $targetFile)
+                $argArray = @("-hide_banner", "-y", "-i", $M_InVideo.Text, "-i", $M_InAudio.Text, "-c", "copy", "-map", "0:v:0", "-map", "1:a:0", "-shortest", $targetFile)
                 $script:State.BatchQueue += @{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $targetFile; ListBox = $null; ListItem = $null }
             }
             # Direct parsing block for Tab: Download
