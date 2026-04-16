@@ -1774,15 +1774,15 @@ try {
         else { 
             $vfmt = (Get-CbVal $Y_VFormat).ToLower()
             
-            if ($resCb -match "2160" -or $resCb -match "4K") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best")) }
-            elseif ($resCb -match "1440") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1440]+bestaudio/best")) }
-            elseif ($resCb -match "1080") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best")) }
-            elseif ($resCb -match "720") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best")) }
-            elseif ($resCb -match "480") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best")) }
-            elseif ($resCb -match "360") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best")) }
-            elseif ($resCb -match "240") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=240][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=240]+bestaudio/best")) }
-            elseif ($resCb -match "144") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=144][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=144]+bestaudio/best")) }
-            else { $argList.AddRange([string[]]@("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best")) }
+            if ($resCb -match "2160" -or $resCb -match "4K") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=2160]+bestaudio/best")) }
+            elseif ($resCb -match "1440") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=1440]+bestaudio/best")) }
+            elseif ($resCb -match "1080") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=1080]+bestaudio/best")) }
+            elseif ($resCb -match "720") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=720]+bestaudio/best")) }
+            elseif ($resCb -match "480") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=480]+bestaudio/best")) }
+            elseif ($resCb -match "360") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=360]+bestaudio/best")) }
+            elseif ($resCb -match "240") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=240]+bestaudio/best")) }
+            elseif ($resCb -match "144") { $argList.AddRange([string[]]@("-f", "bestvideo[height<=144]+bestaudio/best")) }
+            else { $argList.AddRange([string[]]@("-f", "bestvideo+bestaudio/best")) }
             
             $argList.AddRange([string[]]@("--merge-output-format", $vfmt))
         }
@@ -3941,10 +3941,27 @@ $BtnSettings.Add_Click({
                         $exCode = 1
                     }
                     elseif ($job.IsYtDlp -and ($logText -match "ERROR:" -or $logText -match "Could not find known video or audio" -or $logText -match "Unsupported URL" -or $logText -match "This video is unavailable")) {
-                        $StatusText.Text = "Failed (Extraction Error)"
-                        $StatusText.Foreground = "#EF4444"
-                        $LogBox.AppendText("`r`n[ERROR] yt-dlp could not extract media. URL might be unsupported, protected, or missing a video.`r`n")
-                        $exCode = 1
+                        if (-not $job.Retried) {
+                            $StatusText.Text = "Updating yt-dlp & Retrying..."
+                            $StatusText.Foreground = "#F59E0B"
+                            $LogBox.AppendText("`r`n[WARNING] Extraction failed. Attempting to auto-update yt-dlp and retry...`r`n")
+                            
+                            # Fire native yt-dlp updater silently to fetch newest YouTube extractors
+                            try { [void](Start-Process cmd.exe -ArgumentList "/c `"$($script:State.ytdlp)`" -U" -Wait -WindowStyle Hidden) } catch {}
+                            
+                            $job.Retried = $true
+                            $script:State.BatchQueue[$script:State.CurrentJobIndex] = $job
+                            
+                            # Decrement index by 1 so the queue loops back to this exact job
+                            $script:State.CurrentJobIndex--
+                            $exCode = 0 
+                        }
+                        else {
+                            $StatusText.Text = "Failed (Extraction Error)"
+                            $StatusText.Foreground = "#EF4444"
+                            $LogBox.AppendText("`r`n[ERROR] yt-dlp could not extract media even after an update. URL might be unsupported, protected, or missing a video.`r`n")
+                            $exCode = 1
+                        }
                     }
                     elseif ($job.IsYtDlp -and $logText -notmatch "\[download\]" -and $logText -notmatch "\[info\]" -and $logText -notmatch "has already been downloaded") {
                         $StatusText.Text = "Failed (No Media Found)"
