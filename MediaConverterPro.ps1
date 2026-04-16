@@ -3616,7 +3616,7 @@ $BtnSettings.Add_Click({
         Save-Queue
         $job = $script:State.BatchQueue[$script:State.CurrentJobIndex]
         $StatusText.Text = "Processing job $($script:State.CurrentJobIndex + 1) of $($script:State.BatchQueue.Count)..."
-        $StatusText.Foreground = "#6366F1"; $PBar.Value = 0; $LogBox.Clear(); $TxtETA.Text = "ETA: Calc..."
+        $StatusText.Foreground = "#6366F1"; $PBar.Value = 0; $TxtETA.Text = "ETA: Calc..."
         $TaskbarProgress.ProgressState = "Normal"; $TaskbarProgress.ProgressValue = 0.0
 
         try {
