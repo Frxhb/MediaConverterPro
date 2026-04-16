@@ -310,10 +310,15 @@ try {
             }
         }
 
-        # Automatically clean up yt-dlp cache on startup to avoid stale session data
+        # (Removed automatic yt-dlp cache wipe here to preserve YouTube JS signatures and prevent 429 rate limits)
+        <#
+
+        old code:
         if ($script:State.ytdlpFound) {
             [void](Start-Process -FilePath $script:State.ytdlp -ArgumentList "--rm-cache-dir" -WindowStyle Hidden)
-        }
+        }        
+
+        #>
 
         # --- NEW CACHE SAVING BLOCK ---
         # Save found paths to the config file to speed up the next launch
@@ -1542,22 +1547,26 @@ try {
 
             if (-not $script:isWinGetVersion) {
                 $ytProc = Start-Process winget -ArgumentList "install --id yt-dlp.yt-dlp --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
-                if ($ytProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("yt-dlp installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+                if ($ytProc.ExitCode -ne 0) { $ytProc.Dispose(); [void][System.Windows.MessageBox]::Show("yt-dlp installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+                $ytProc.Dispose()
             }
 
             if (-not $script:State.ffmpegFound) {
                 $ffProc = Start-Process winget -ArgumentList "install --id Gyan.FFmpeg --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
-                if ($ffProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("FFmpeg installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+                if ($ffProc.ExitCode -ne 0) { $ffProc.Dispose(); [void][System.Windows.MessageBox]::Show("FFmpeg installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+                $ffProc.Dispose()
             }
 
             if (-not $script:State.handbrakeFound) {
                 $hbProc = Start-Process winget -ArgumentList "install --id HandBrake.HandBrake.CLI --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
-                if ($hbProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("HandBrakeCLI installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+                if ($hbProc.ExitCode -ne 0) { $hbProc.Dispose(); [void][System.Windows.MessageBox]::Show("HandBrakeCLI installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+                $hbProc.Dispose()
             }
 
             if (-not $script:State.jsRuntimeFound) {
                 $nodeProc = Start-Process winget -ArgumentList "install --id OpenJS.NodeJS --silent --force --accept-source-agreements --accept-package-agreements" -Wait -PassThru
-                if ($nodeProc.ExitCode -ne 0) { [void][System.Windows.MessageBox]::Show("Node.js installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+                if ($nodeProc.ExitCode -ne 0) { $nodeProc.Dispose(); [void][System.Windows.MessageBox]::Show("Node.js installation cancelled or failed.", "Installation Aborted", 0, 48); return }
+                $nodeProc.Dispose()
             }
         
             $env:PATH = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
@@ -3569,7 +3578,8 @@ $BtnSettings.Add_Click({
     function Stop-ProcessTree($proc) {
         try {
             if ($null -ne $proc -and -not $proc.HasExited) {
-                [void](Start-Process "taskkill.exe" -ArgumentList "/PID $($proc.Id) /T /F" -WindowStyle Hidden -Wait)
+                # Removed -Wait to prevent the WPF UI thread from freezing during termination
+                [void](Start-Process "taskkill.exe" -ArgumentList "/PID $($proc.Id) /T /F" -WindowStyle Hidden)
             }
         } 
         catch { try { $proc.Kill() } catch {} }
