@@ -2214,7 +2214,7 @@ try {
 
     # Restore from tray on double click
     $script:TrayIcon.add_DoubleClick({
-        $window.Show()
+        $window.ShowInTaskbar = $true
         $window.WindowState = [System.Windows.WindowState]::Normal
         $window.Activate()
     })
@@ -2222,7 +2222,7 @@ try {
     # Map the window minimize button to hide the app into the tray
     $window.Add_StateChanged({
         if ($window.WindowState -eq [System.Windows.WindowState]::Minimized) {
-            $window.Hide()
+            $window.ShowInTaskbar = $false
         }
     })
 
