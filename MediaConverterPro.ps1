@@ -1433,7 +1433,7 @@ try {
     # ==============================================================================
 
     # Function to apply loaded settings (Theme, Global Default Directories) to the UI
-    function Apply-Config {
+    function Enable-Config {
         $bc = New-Object System.Windows.Media.BrushConverter
         if ($Config.Theme -eq "Dark") {
             $window.Resources["BgBrush"] = $bc.ConvertFromString("#0F172A")
@@ -1461,7 +1461,7 @@ try {
             $Y_OutDir.Text = $Config.DefaultOutDir
         }
     }
-    Apply-Config
+    Enable-Config
 
     # Restore Whisper AI model from config
     $modelItemIdx = 1
@@ -1473,7 +1473,7 @@ try {
     $S_ScribeModel.SelectedIndex = $modelItemIdx
 
     # Verify all tool paths are available, and prompt to install them if missing via WinGet
-    function Check-Missing-Tools {
+    function MissingToolsCheck {
         Find-Tools
 
         if ($script:State.ffmpegFound -and $script:State.handbrakeFound -and $script:isWinGetVersion -and $script:State.jsRuntimeFound) {
@@ -1578,7 +1578,7 @@ try {
     $window.Add_ContentRendered({ 
             $window.Dispatcher.InvokeAsync([Action] {
         
-                    Check-Missing-Tools 
+                    MissingToolsCheck 
 
                     # Dynamic Hardware Acceleration Detection
                     if ($script:State.ffmpegFound) {
@@ -1672,7 +1672,7 @@ try {
                                 }
                                 $BtnRun.IsEnabled = $false; $BtnUpdate.IsEnabled = $false; $BtnCancel.IsEnabled = $true; $BtnSkip.IsEnabled = $true
                                 $LogBox.AppendText("[RESUME] Loaded $($script:State.BatchQueue.Count) jobs from previous session.`r`n")
-                                Process-NextJob
+                                ProcessNextJob
                             }
                             catch {
                                 Write-CrashLog "Failed to parse/resume Queue. Corrupted JSON file? Error: $($_.Exception.Message)"
@@ -2446,12 +2446,12 @@ try {
                     Write-UpdLog "[UPDATE] Starting dependency updates..."
             
                     # Helper function to force the UI to refresh visually before blocking it with Start-Process
-                    function Force-UIRefresh {
+                    function ForceUiRefresh {
                         $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
                     }
 
                     # Helper function to properly translate WinGet and standard exit codes to the Live Log
-                    function Log-UpdateResult($ToolName, $Proc) {
+                    function LogUpdateResult($ToolName, $Proc) {
                         if (-not $Proc) { return }
                         $code = $Proc.ExitCode
                         if ($code -eq 0) { 
@@ -2467,7 +2467,7 @@ try {
 
                     if ($doYt -and $script:State.ytdlpFound) {
                         $StatusText.Text = "Updating yt-dlp..."
-                        $PBar.Value = 20; Force-UIRefresh
+                        $PBar.Value = 20; ForceUiRefresh
                         
                         if ($script:isWinGetVersion) {
                             $p = Start-Process winget -ArgumentList "upgrade --id yt-dlp.yt-dlp --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
@@ -2475,33 +2475,33 @@ try {
                         else {
                             $p = Start-Process cmd.exe -ArgumentList "/c `"$($script:State.ytdlp)`" -U" -Wait -WindowStyle Normal -PassThru
                         }
-                        Log-UpdateResult "yt-dlp" $p
+                        LogUpdateResult "yt-dlp" $p
                     }
                     
                     if ($doFF) {
                         $StatusText.Text = "Updating FFmpeg..."
-                        $PBar.Value = 40; Force-UIRefresh
+                        $PBar.Value = 40; ForceUiRefresh
                         $p = Start-Process winget -ArgumentList "upgrade --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
-                        Log-UpdateResult "FFmpeg" $p
+                        LogUpdateResult "FFmpeg" $p
                     }
 
                     if ($doHb) {
                         $StatusText.Text = "Updating HandBrake..."
-                        $PBar.Value = 50; Force-UIRefresh
+                        $PBar.Value = 50; ForceUiRefresh
                         $p = Start-Process winget -ArgumentList "upgrade --id HandBrake.HandBrake.CLI --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
-                        Log-UpdateResult "HandBrake" $p
+                        LogUpdateResult "HandBrake" $p
                     }
                     
                     if ($doNode) {
                         $StatusText.Text = "Updating Node.js..."
-                        $PBar.Value = 60; Force-UIRefresh
+                        $PBar.Value = 60; ForceUiRefresh
                         $p = Start-Process winget -ArgumentList "upgrade --id OpenJS.NodeJS --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
-                        Log-UpdateResult "Node.js" $p
+                        LogUpdateResult "Node.js" $p
                     }
                     
                     if ($doWhisper) {
                         $StatusText.Text = "Updating Whisper AI..."
-                        $PBar.Value = 80; Force-UIRefresh
+                        $PBar.Value = 80; ForceUiRefresh
                         if (Get-Command "python" -ErrorAction SilentlyContinue) {
                             $tempPipLog = Join-Path $env:TEMP "whisper_update.log"
                             if (Test-Path $tempPipLog) { Remove-Item $tempPipLog -Force -ErrorAction SilentlyContinue }
@@ -2536,9 +2536,9 @@ try {
                     
                     if ($doUpscale) {
                         $StatusText.Text = "Updating Upscayl..."
-                        $PBar.Value = 90; Force-UIRefresh
+                        $PBar.Value = 90; ForceUiRefresh
                         $p = Start-Process winget -ArgumentList "upgrade --id Upscayl.Upscayl --accept-source-agreements --accept-package-agreements" -Wait -WindowStyle Normal -PassThru
-                        Log-UpdateResult "Upscayl" $p
+                        LogUpdateResult "Upscayl" $p
                     }
 
                     $StatusText.Text = "Updates completed!"
@@ -2728,7 +2728,7 @@ $BtnSettings.Add_Click({
                     $Config.AutoDelete = [bool]$setWin.FindName("ChkAutoDelete").IsChecked
                     
                     $Config | ConvertTo-Json -Depth 10 | Set-Content $ConfigFile -Encoding UTF8 #UTF8 to preserve any special chars in paths
-                    Apply-Config
+                    Enable-Config
                     $setWin.Close()
                 })
             [void]$setWin.ShowDialog()
@@ -2820,7 +2820,7 @@ $BtnSettings.Add_Click({
     $DragEnterHandler = [System.Windows.DragEventHandler] { $_.Effects = [System.Windows.DragDropEffects]::Copy; $_.Handled = $true; $_.Source.Background = $window.Resources["DragBrush"] }
     $DragLeaveHandler = [System.Windows.DragEventHandler] { $_.Source.Background = $window.Resources["InputBgBrush"] }
     
-    function Setup-DragReorder ([System.Windows.Controls.ListBox]$lb, [string]$extRegex, [scriptblock]$checkExt) {
+    function SetupDragReorder ([System.Windows.Controls.ListBox]$lb, [string]$extRegex, [scriptblock]$checkExt) {
         $lb.Add_PreviewMouseMove({
                 param($sender, $e)
                 if ($e.LeftButton -eq [System.Windows.Input.MouseButtonState]::Pressed -and $sender.SelectedItem) {
@@ -2858,9 +2858,9 @@ $BtnSettings.Add_Click({
     }
 
     # Always allow both audio and video formats to be dropped into the Audio list
-    Setup-DragReorder $A_InList "\.(mp3|wav|m4a|flac|ogg|aac|mp4|mkv|avi|mov|webm)$" $null
-    Setup-DragReorder $V_InList "\.(mp4|mkv|avi|mov|webm)$" $null
-    Setup-DragReorder $I_InList "\.(jpg|jpeg|png|webp|bmp|gif|heic)$" $null
+    SetupDragReorder $A_InList "\.(mp3|wav|m4a|flac|ogg|aac|mp4|mkv|avi|mov|webm)$" $null
+    SetupDragReorder $V_InList "\.(mp4|mkv|avi|mov|webm)$" $null
+    SetupDragReorder $I_InList "\.(jpg|jpeg|png|webp|bmp|gif|heic)$" $null
 
     $TextBoxDropHandler = [System.Windows.DragEventHandler] {
         $_.Source.Background = $window.Resources["InputBgBrush"]
@@ -2871,7 +2871,7 @@ $BtnSettings.Add_Click({
     }
 
     # Helper function to easily bind right-click Context Menus to ListBoxes
-    function Bind-ContextMenu($ListBox, $BtnRemove, $BtnClear) {
+    function Add-ContextMenu($ListBox, $BtnRemove, $BtnClear) {
         $BtnRemove.Add_Click({
                 $selected = @($ListBox.SelectedItems)
                 # Clear UI selection first to prevent multi-select redraw lag
@@ -2887,9 +2887,9 @@ $BtnSettings.Add_Click({
             })
     }
 
-    Bind-ContextMenu $A_InList $A_CtxRemove $A_CtxClear
-    Bind-ContextMenu $V_InList $V_CtxRemove $V_CtxClear
-    Bind-ContextMenu $I_InList $I_CtxRemove $I_CtxClear
+    Add-ContextMenu $A_InList $A_CtxRemove $A_CtxClear
+    Add-ContextMenu $V_InList $V_CtxRemove $V_CtxClear
+    Add-ContextMenu $I_InList $I_CtxRemove $I_CtxClear
 
     # Manual Add File Click handlers utilizing Windows Forms OpenFileDialog
     $A_BtnAdd.Add_Click({ 
@@ -2927,7 +2927,7 @@ $BtnSettings.Add_Click({
     $I_BtnClear.Add_Click({ $I_InList.Items.Clear() })
 
     # Helper function for assigning an Output Directory using standard FolderBrowserDialog
-    function Pick-OutDir([System.Windows.Controls.TextBox]$Box) {
+    function Select-OutDir([System.Windows.Controls.TextBox]$Box) {
         $fd = New-Object System.Windows.Forms.FolderBrowserDialog
         $fd.Description = "Select Target Folder"
         $fd.SelectedPath = $ScriptDir
@@ -2939,11 +2939,11 @@ $BtnSettings.Add_Click({
         } 
     }
 
-    $A_BtnOut.Add_Click({ Pick-OutDir $A_OutDir })
-    $V_BtnOut.Add_Click({ Pick-OutDir $V_OutDir })
-    $I_BtnOut.Add_Click({ Pick-OutDir $I_OutDir })
-    $Y_BtnOut.Add_Click({ Pick-OutDir $Y_OutDir })
-    $S_BtnUpscaleOut.Add_Click({ Pick-OutDir $S_UpscaleOutDir })
+    $A_BtnOut.Add_Click({ Select-OutDir $A_OutDir })
+    $V_BtnOut.Add_Click({ Select-OutDir $V_OutDir })
+    $I_BtnOut.Add_Click({ Select-OutDir $I_OutDir })
+    $Y_BtnOut.Add_Click({ Select-OutDir $Y_OutDir })
+    $S_BtnUpscaleOut.Add_Click({ Select-OutDir $S_UpscaleOutDir })
 
     # Muxing and Downloader Browsers
     $M_BtnVid.Add_Click({ $fd = New-Object System.Windows.Forms.OpenFileDialog; $fd.InitialDirectory = $ScriptDir; $fd.Filter = "Video|*.mp4;*.mkv;*.avi;*.webm|All|*.*"; if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $M_InVideo.Text = $fd.FileName } })
@@ -3204,7 +3204,7 @@ $BtnSettings.Add_Click({
 
     # --- STRICT TRIM UI & VALIDATION LOGIC ---
     
-    function Enforce-TimeStr([string]$txt) {
+    function Set-TimeStr([string]$txt) {
         $ts = [TimeSpan]::Zero
         if ([TimeSpan]::TryParse($txt, [ref]$ts)) { return "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds }
         return "00:00:00"
@@ -3212,21 +3212,21 @@ $BtnSettings.Add_Click({
 
     # Audio TextBoxes sync to Sliders
     $A_TrimStart.Add_LostFocus({ 
-            $A_TrimStart.Text = Enforce-TimeStr $A_TrimStart.Text
+            $A_TrimStart.Text = Set-TimeStr $A_TrimStart.Text
             $ts = [TimeSpan]::Parse($A_TrimStart.Text); if ($ts.TotalSeconds -le $A_SliderTrimStart.Maximum) { $A_SliderTrimStart.Value = $ts.TotalSeconds } 
         })
     $A_TrimEnd.Add_LostFocus({ 
-            $A_TrimEnd.Text = Enforce-TimeStr $A_TrimEnd.Text
+            $A_TrimEnd.Text = Set-TimeStr $A_TrimEnd.Text
             $ts = [TimeSpan]::Parse($A_TrimEnd.Text); if ($ts.TotalSeconds -le $A_SliderTrimEnd.Maximum) { $A_SliderTrimEnd.Value = $ts.TotalSeconds } 
         })
     
     # Video TextBoxes sync to Sliders
     $V_TrimStart.Add_LostFocus({ 
-            $V_TrimStart.Text = Enforce-TimeStr $V_TrimStart.Text
+            $V_TrimStart.Text = Set-TimeStr $V_TrimStart.Text
             $ts = [TimeSpan]::Parse($V_TrimStart.Text); if ($ts.TotalSeconds -le $V_SliderTrimStart.Maximum) { $V_SliderTrimStart.Value = $ts.TotalSeconds } 
         })
     $V_TrimEnd.Add_LostFocus({ 
-            $V_TrimEnd.Text = Enforce-TimeStr $V_TrimEnd.Text
+            $V_TrimEnd.Text = Set-TimeStr $V_TrimEnd.Text
             $ts = [TimeSpan]::Parse($V_TrimEnd.Text); if ($ts.TotalSeconds -le $V_SliderTrimEnd.Maximum) { $V_SliderTrimEnd.Value = $ts.TotalSeconds } 
         })
 
@@ -3356,7 +3356,7 @@ $BtnSettings.Add_Click({
     $Y_Link.Add_LostKeyboardFocus({ if ([string]::IsNullOrWhiteSpace($Y_Link.Text)) { $Y_Link.Text = "https://" } })
 
     # Validates if an inputted URL is supported by yt-dlp by referencing the markdown from GitHub
-    function Check-YtDlpSupport([string]$link) {
+    function CheckYtDlpSupport([string]$link) {
         $isValidUrl = $false
         try {
             if ($link -match "^(https?://|www\.)") {
@@ -3480,7 +3480,7 @@ $BtnSettings.Add_Click({
             $Y_BtnPreview.IsEnabled = $false
             $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
 
-            if (-not (Check-YtDlpSupport $link)) {
+            if (-not (CheckYtDlpSupport $link)) {
                 $Y_BtnPreview.IsEnabled = $true
                 return
             }
@@ -3553,7 +3553,7 @@ $BtnSettings.Add_Click({
     $timer.Interval = [TimeSpan]::FromMilliseconds(250)
 
     # Completely terminate a process and its child processes
-    function Kill-ProcessTree($proc) {
+    function Stop-ProcessTree($proc) {
         try {
             if ($null -ne $proc -and -not $proc.HasExited) {
                 [void](Start-Process "taskkill.exe" -ArgumentList "/PID $($proc.Id) /T /F" -WindowStyle Hidden -Wait)
@@ -3563,7 +3563,7 @@ $BtnSettings.Add_Click({
     }
     
     # Core loop logic for parsing the global task queue
-    function Process-NextJob {
+    function ProcessNextJob {
         if ($script:State.CurrentJobIndex -ge $script:State.BatchQueue.Count) {
             if ($timer) { $timer.Stop() }
             $BtnCancel.IsEnabled = $false
@@ -3711,7 +3711,7 @@ $BtnSettings.Add_Click({
             $errMsg = "Failed processing job $($script:State.CurrentJobIndex + 1): $($_.Exception.Message)"
             Write-CrashLog "$errMsg"
             $LogBox.AppendText("`r`n[CRITICAL ERROR] $errMsg`r`n")
-            $script:State.CurrentJobIndex++; Process-NextJob
+            $script:State.CurrentJobIndex++; ProcessNextJob
         }
     }
     # Routine logic for polling output file of cmd wrapper and translating string matches to progress bar
@@ -4069,13 +4069,13 @@ $BtnSettings.Add_Click({
                 }
 
                 $script:State.CurrentJobIndex++
-                [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ Process-NextJob })
+                [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ ProcessNextJob })
             }
         })
 
     # Main entry point when the user clicks 'START PROCESS'. Parses inputs, creates jobs, and starts the queue.
     $BtnRun.Add_Click({
-            Check-Missing-Tools
+            MissingToolsCheck
 
             # Pre-fetch supported sites cache silently in the background to prevent UI freezing later
             if ($null -eq $script:State.SupportedSitesCache) {
@@ -4327,7 +4327,7 @@ $BtnSettings.Add_Click({
                     $btnSp.HorizontalAlignment = "Center"
 
                     # Helper to cleanly generate the 5 buttons
-                    function Make-Btn($content, $bg) {
+                    function New-Btn($content, $bg) {
                         $b = New-Object System.Windows.Controls.Button
                         $b.Content = $content; $b.Height = 35; $b.Margin = "5"; $b.Padding = "12,0"
                         $b.Background = $bg; $b.Foreground = "White"; $b.BorderThickness = 0; $b.Cursor = "Hand"
@@ -4335,19 +4335,19 @@ $BtnSettings.Add_Click({
                     }
 
                     # We change the visible text here, but keep the $script:plResult exact!
-                    $btnYes = Make-Btn "Yes (Download this playlist)" "#10B981"
+                    $btnYes = New-Btn "Yes (Download this playlist)" "#10B981"
                     $btnYes.Add_Click({ $script:plResult = "Yes"; $win.Close() })
                     
-                    $btnYesAll = Make-Btn "Yes to All (Download all playlists)" "#059669"
+                    $btnYesAll = New-Btn "Yes to All (Download all playlists)" "#059669"
                     $btnYesAll.Add_Click({ $script:plResult = "YesToAll"; $win.Close() })
                     
-                    $btnNo = Make-Btn "No (Don't download this playlist)" "#F59E0B"
+                    $btnNo = New-Btn "No (Don't download this playlist)" "#F59E0B"
                     $btnNo.Add_Click({ $script:plResult = "No"; $win.Close() })
                     
-                    $btnNoAll = Make-Btn "No to All (Don't download any playlists)" "#D97706"
+                    $btnNoAll = New-Btn "No to All (Don't download any playlists)" "#D97706"
                     $btnNoAll.Add_Click({ $script:plResult = "NoToAll"; $win.Close() })
 
-                    $btnCancel = Make-Btn "Cancel" "#EF4444"
+                    $btnCancel = New-Btn "Cancel" "#EF4444"
                     $btnCancel.Add_Click({ $script:plResult = "Cancel"; $win.Close() })
 
                     [void]$btnSp.Children.Add($btnYes); [void]$btnSp.Children.Add($btnYesAll)
@@ -4998,7 +4998,7 @@ $BtnSettings.Add_Click({
                 $BtnCancel.IsEnabled = $true
                 $BtnSkip.IsEnabled = $true
                 $script:State.CurrentJobIndex = 0
-                Process-NextJob
+                ProcessNextJob
             }
         })
 
@@ -5121,12 +5121,12 @@ $BtnSettings.Add_Click({
 
                 # Send kill signal instantly
                 if ($script:State.p) { 
-                    Kill-ProcessTree $script:State.p 
+                    Stop-ProcessTree $script:State.p 
                 }
                 else {
                     # Force UI reset if no process is currently bound
                     $script:State.CurrentJobIndex = 1
-                    [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ Process-NextJob })
+                    [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ ProcessNextJob })
                 }
 
                 # Run file cleanup asynchronously using pure .NET to ensure Runspace thread safety
@@ -5156,14 +5156,14 @@ $BtnSettings.Add_Click({
     # Aborts current process but allows the loop to trigger the next file in array
     $BtnSkip.Add_Click({
             if ($script:State.p) { 
-                Kill-ProcessTree $script:State.p 
+                Stop-ProcessTree $script:State.p 
                 $LogBox.AppendText("`r`n[SKIP] User skipped current process.`r`n")
             }
         })
 
     # Ensure application cleanly terminates child processes, saves queue, and wipes temp files
     $window.Add_Closing({ 
-            Kill-ProcessTree $script:State.p
+            Stop-ProcessTree $script:State.p
             Save-Queue 
         
             # Clean up temporary logs and thumbnails to prevent disk bloat
