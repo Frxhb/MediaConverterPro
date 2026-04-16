@@ -1966,10 +1966,13 @@ try {
                 $pinfo = New-Object System.Diagnostics.ProcessStartInfo
                 $pinfo.FileName = $script:State.ffprobe
                 $pinfo.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$inFile`""
-                $pinfo.UseShellExecute = $false; $pinfo.RedirectStandardOutput = $true; $pinfo.CreateNoWindow = $true
+                $pinfo.UseShellExecute = $false; $pinfo.RedirectStandardOutput = $true; $pinfo.RedirectStandardError = $true; $pinfo.CreateNoWindow = $true
                 $pDur = [System.Diagnostics.Process]::Start($pinfo)
+                
                 $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
-                $pDur.WaitForExit(3000) | Out-Null
+                [void]$pDur.StandardError.ReadToEnd()
+                
+                if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
                 $pDur.Dispose() # Clean up handle
                 
                 $d = 0
@@ -3011,10 +3014,14 @@ $BtnSettings.Add_Click({
                     $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
                     $pinfoDur.FileName = $script:State.ffprobe
                     $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$filePath`""
-                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
                     $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                    
                     $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
-                    $pDur.WaitForExit()
+                    [void]$pDur.StandardError.ReadToEnd()
+                    
+                    if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
+                    $pDur.Dispose()
                     $totalSecs = 0
                     if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs)) {
                         $endSecs = $totalSecs
@@ -3265,11 +3272,13 @@ $BtnSettings.Add_Click({
             $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
             $pinfoDur.FileName = $script:State.ffprobe
             $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$FilePath`""
-            $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+            $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
             $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-            $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
             
-            $pDur.WaitForExit(3000) | Out-Null # 3-second timeout prevents infinite hang
+            $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+            [void]$pDur.StandardError.ReadToEnd()
+            
+            if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
             $pDur.Dispose() # REQUIRED to prevent Windows handle leaks
             
             $totalSecs = 0
@@ -3335,10 +3344,14 @@ $BtnSettings.Add_Click({
                 $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
                 $pinfoDur.FileName = $script:State.ffprobe
                 $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($V_InList.SelectedItem)`""
-                $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
                 $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                
                 $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
-                $pDur.WaitForExit()
+                [void]$pDur.StandardError.ReadToEnd()
+                
+                if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
+                $pDur.Dispose()
             
                 $totalSecs = 0
                 if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs) -and $totalSecs -gt 0) {
@@ -3634,10 +3647,14 @@ $BtnSettings.Add_Click({
                     $pinfoF = New-Object System.Diagnostics.ProcessStartInfo
                     $pinfoF.FileName = $script:State.ffprobe
                     $pinfoF.Arguments = "-v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 `"$($job.InputFile)`""
-                    $pinfoF.UseShellExecute = $false; $pinfoF.RedirectStandardOutput = $true; $pinfoF.CreateNoWindow = $true
+                    $pinfoF.UseShellExecute = $false; $pinfoF.RedirectStandardOutput = $true; $pinfoF.RedirectStandardError = $true; $pinfoF.CreateNoWindow = $true
                     $pFs = [System.Diagnostics.Process]::Start($pinfoF)
-                    $fStr = $pFs.StandardOutput.ReadToEnd().Trim() # Read before wait to prevent deadlocks
-                    if ($pFs.WaitForExit(3000)) {
+                    
+                    $fStr = $pFs.StandardOutput.ReadToEnd().Trim()
+                    $errDump = $pFs.StandardError.ReadToEnd()
+                    
+                    if (-not $pFs.WaitForExit(3000)) { try { $pFs.Kill() } catch {} }
+                    else {
                         if ($fStr -match '^\d+$') { $script:State.totalFrames = [int]$fStr }
                     }
                     $pFs.Dispose() # Free up Windows handle
@@ -3646,10 +3663,14 @@ $BtnSettings.Add_Click({
                     $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
                     $pinfoDur.FileName = $script:State.ffprobe
                     $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($job.InputFile)`""
-                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                    $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
                     $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-                    $durStr = $pDur.StandardOutput.ReadToEnd().Trim() # Read before waiting to prevent buffer deadlocks
-                    if ($pDur.WaitForExit(3000)) {
+                    
+                    $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+                    [void]$pDur.StandardError.ReadToEnd()
+                    
+                    if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
+                    else {
                         $d = 0.0
                         if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$d) -and $d -gt 0) {
                             $script:State.totalDuration = $d
@@ -4000,10 +4021,14 @@ $BtnSettings.Add_Click({
                                         $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
                                         $pinfoDur.FileName = $script:State.ffprobe
                                         $pinfoDur.Arguments = "-v error -show_entries format=duration:stream=width,height -of json `"$finalFile`""
-                                        $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
+                                        $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
                                         $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                                        
                                         $jsonOut = $pDur.StandardOutput.ReadToEnd()
-                                        $pDur.WaitForExit()
+                                        [void]$pDur.StandardError.ReadToEnd()
+                                        
+                                        if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
+                                        $pDur.Dispose()
                                     
                                         if ($jsonOut) {
                                             $mediaInfo = $jsonOut | ConvertFrom-Json
