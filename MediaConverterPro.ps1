@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Media Converter Pro 1.0 - A powerful media conversion, editing, and downloading tool built with PowerShell and WPF.
+    Media Converter Pro - A powerful media conversion, editing, and downloading tool built with PowerShell and WPF.
 .DESCRIPTION
     This script provides a GUI for ffmpeg, ffprobe, yt-dlp, and upscayl. It allows batch processing,
     queuing, downloading from various sites, and AI-based audio transcription/image upscaling.
@@ -52,11 +52,12 @@ $WM_COPYDATA = 0x004A
 $WM_COPYGLOBALDATA = 0x0049
 $MSGFLT_ALLOW = 1
 
-# Apply the message filter to the current process main window handle
-$handle = (Get-Process -Id $pid).MainWindowHandle
-[void]$winApi::ChangeWindowMessageFilterEx($handle, $WM_DROPFILES, $MSGFLT_ALLOW, [IntPtr]::Zero)
-[void]$winApi::ChangeWindowMessageFilterEx($handle, $WM_COPYDATA, $MSGFLT_ALLOW, [IntPtr]::Zero)
-[void]$winApi::ChangeWindowMessageFilterEx($handle, $WM_COPYGLOBALDATA, $MSGFLT_ALLOW, [IntPtr]::Zero)
+# Save the WinAPI variables to the script scope so we can apply them safely after the WPF Window renders
+$script:winApi = $winApi
+$script:WM_DROPFILES = $WM_DROPFILES
+$script:WM_COPYDATA = $WM_COPYDATA
+$script:WM_COPYGLOBALDATA = $WM_COPYGLOBALDATA
+$script:MSGFLT_ALLOW = $MSGFLT_ALLOW
 
 # Determine the directory where this script resides to establish a working path
 $ScriptDir = $PSScriptRoot
@@ -317,7 +318,7 @@ try {
         # --- NEW CACHE SAVING BLOCK ---
         # Save found paths to the config file to speed up the next launch
         if ($script:State.ffmpegFound -or $script:State.ytdlpFound -or $script:State.upscaylFound) {
-            $cacheObj = @{}
+            $cacheObj = [PSCustomObject]@{}
             if (Test-Path $ConfigFile) {
                 try { $cacheObj = Get-Content $ConfigFile -Raw | ConvertFrom-Json } catch {}
             }
@@ -1401,6 +1402,15 @@ try {
     $reader = (New-Object System.Xml.XmlNodeReader $xaml)
     $window = [Windows.Markup.XamlReader]::Load($reader)
 
+    # Safely bypass UIPI (Drag & Drop as Admin) by fetching the native WPF window handle once it initializes
+    $window.Add_SourceInitialized({
+        $helper = New-Object System.Windows.Interop.WindowInteropHelper($window)
+        $handle = $helper.Handle
+        [void]$script:winApi::ChangeWindowMessageFilterEx($handle, $script:WM_DROPFILES, $script:MSGFLT_ALLOW, [IntPtr]::Zero)
+        [void]$script:winApi::ChangeWindowMessageFilterEx($handle, $script:WM_COPYDATA, $script:MSGFLT_ALLOW, [IntPtr]::Zero)
+        [void]$script:winApi::ChangeWindowMessageFilterEx($handle, $script:WM_COPYGLOBALDATA, $script:MSGFLT_ALLOW, [IntPtr]::Zero)
+    })
+
     # Find and map all XAML UI elements to their corresponding PowerShell variables
     $UIElements = @(
         "TaskbarProgress",
@@ -1596,9 +1606,11 @@ try {
                     if ($null -eq $script:State.SupportedSitesCache) {
                         [void][System.Threading.Tasks.Task]::Run([Action] {
                                 try {
-                                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                                    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                                    $wc = New-Object System.Net.WebClient
                                     $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
-                                    $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -TimeoutSec 10
+                                    $script:State.SupportedSitesCache = $wc.DownloadString($rawUrl)
+                                    $wc.Dispose()
                                 }
                                 catch { $script:State.SupportedSitesCache = "fallback_offline" }
                             })
@@ -1740,7 +1752,8 @@ try {
                 "--js-runtime", "node",
                 "--remote-components", "ejs:github",
                 "--extractor-args", $extArgs,
-                "--force-overwrites"
+                "--force-overwrites",
+                "--no-colors"
             ))
 
         $resCb = Get-CbVal $Y_Res
@@ -1954,7 +1967,10 @@ try {
                 $pinfo.FileName = $script:State.ffprobe
                 $pinfo.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$inFile`""
                 $pinfo.UseShellExecute = $false; $pinfo.RedirectStandardOutput = $true; $pinfo.CreateNoWindow = $true
-                $pDur = [System.Diagnostics.Process]::Start($pinfo); $durStr = $pDur.StandardOutput.ReadToEnd().Trim(); $pDur.WaitForExit()
+                $pDur = [System.Diagnostics.Process]::Start($pinfo)
+                $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+                $pDur.WaitForExit(3000) | Out-Null
+                $pDur.Dispose() # Clean up handle
                 
                 $d = 0
                 if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$d) -and $d -gt 0) {
@@ -2068,9 +2084,14 @@ try {
 
         # Sync the UI Textbox to current item dynamically
         if ($inFile -ne "[Preview_Video_Input]") {
-            $script:State.IsAutoUpdatingFilename = $true
-            $V_OutFilename.Text = Get-SmartVideoFilename $inFile
-            $script:State.IsAutoUpdatingFilename = $false
+            $newName = Get-SmartVideoFilename $inFile
+            if ($V_OutFilename.Text -ne $newName) {
+                $script:State.IsAutoUpdatingFilename = $true
+                $caret = $V_OutFilename.CaretIndex
+                $V_OutFilename.Text = $newName
+                $V_OutFilename.CaretIndex = $caret
+                $script:State.IsAutoUpdatingFilename = $false
+            }
         }
 
         if (-not $V_CheckCustomParams.IsChecked) { return }
@@ -2994,7 +3015,6 @@ $BtnSettings.Add_Click({
                     $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
                     $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
                     $pDur.WaitForExit()
-
                     $totalSecs = 0
                     if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs)) {
                         $endSecs = $totalSecs
@@ -3022,8 +3042,18 @@ $BtnSettings.Add_Click({
                     $procs += [System.Diagnostics.Process]::Start($pinfo)
                 }
 
-                # Phase 2: Wait for all extractions to complete simultaneously
-                foreach ($p in $procs) { $p.WaitForExit(); $p.Dispose() }
+                # Phase 2: Wait for all extractions to complete simultaneously WITHOUT freezing the UI
+                foreach ($p in $procs) { 
+                    $timeout = (Get-Date).AddSeconds(15)
+                    while (-not $p.HasExited) {
+                        $frame = New-Object System.Windows.Threading.DispatcherFrame
+                        $window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Background, [Action]{ $frame.Continue = $false }) | Out-Null
+                        [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+                        Start-Sleep -Milliseconds 20
+                        if ((Get-Date) -gt $timeout) { try { $p.Kill() } catch {}; break }
+                    }
+                    $p.Dispose() 
+                }
 
                 # Phase 3: Load generated images into UI safely
                 for ($i = 1; $i -le 10; $i++) {
@@ -3110,7 +3140,7 @@ $BtnSettings.Add_Click({
             
             $p = [System.Diagnostics.Process]::Start($pinfo)
             
-            # FIX 2: Read streams BEFORE waiting for exit to prevent buffer deadlocks
+            # Read streams BEFORE waiting for exit to prevent buffer deadlocks
             $stdOutTask = $p.StandardOutput.ReadToEndAsync()
             $stdErrTask = $p.StandardError.ReadToEndAsync()
             
@@ -3134,6 +3164,7 @@ $BtnSettings.Add_Click({
             else {
                 $infoText = if ($script:State.ffprobeFound) { $stdOutTask.Result } else { $stdErrTask.Result }
             }
+            $p.Dispose() # Free up system memory
 
             if ([string]::IsNullOrWhiteSpace($infoText)) { 
                 $infoText = "No metadata could be extracted.`n`nError Output:`n$($stdErrTask.Result)" 
@@ -3237,7 +3268,10 @@ $BtnSettings.Add_Click({
             $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
             $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
             $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
-            $pDur.WaitForExit()
+            
+            $pDur.WaitForExit(3000) | Out-Null # 3-second timeout prevents infinite hang
+            $pDur.Dispose() # REQUIRED to prevent Windows handle leaks
+            
             $totalSecs = 0
             if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs)) {
                 return $totalSecs
@@ -3364,9 +3398,11 @@ $BtnSettings.Add_Click({
                 # Fetch supported sites list to cache it, preventing repetitive slow HTTP requests
                 if ($null -eq $script:State.SupportedSitesCache -or $script:State.SupportedSitesCache.Length -eq 0) {
                     try {
-                        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                        $wc = New-Object System.Net.WebClient
                         $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
-                        $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing
+                        $script:State.SupportedSitesCache = $wc.DownloadString($rawUrl)
+                        $wc.Dispose()
                     }
                     catch { $script:State.SupportedSitesCache = "fallback_offline" }
                 }
@@ -3600,24 +3636,26 @@ $BtnSettings.Add_Click({
                     $pinfoF.Arguments = "-v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 `"$($job.InputFile)`""
                     $pinfoF.UseShellExecute = $false; $pinfoF.RedirectStandardOutput = $true; $pinfoF.CreateNoWindow = $true
                     $pFs = [System.Diagnostics.Process]::Start($pinfoF)
+                    $fStr = $pFs.StandardOutput.ReadToEnd().Trim() # Read before wait to prevent deadlocks
                     if ($pFs.WaitForExit(3000)) {
-                        $fStr = $pFs.StandardOutput.ReadToEnd().Trim()
                         if ($fStr -match '^\d+$') { $script:State.totalFrames = [int]$fStr }
                     }
+                    $pFs.Dispose() # Free up Windows handle
 
-                    # FIX: Fetch total duration safely before FFmpeg starts to guarantee ETA calc works
+                    # Fetch total duration safely before FFmpeg starts to guarantee ETA calc works
                     $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
                     $pinfoDur.FileName = $script:State.ffprobe
                     $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($job.InputFile)`""
                     $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.CreateNoWindow = $true
                     $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-                    $durStr = $pDur.StandardOutput.ReadToEnd().Trim() # FIX: Read before waiting to prevent buffer deadlocks
+                    $durStr = $pDur.StandardOutput.ReadToEnd().Trim() # Read before waiting to prevent buffer deadlocks
                     if ($pDur.WaitForExit(3000)) {
                         $d = 0.0
                         if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$d) -and $d -gt 0) {
                             $script:State.totalDuration = $d
                         }
                     }
+                    $pDur.Dispose() # REQUIRED to prevent Windows handle leaks
                 }
                 catch { Write-CrashLog "Fast Frame & Duration pre-fetch failed: $($_.Exception.Message)" }
             }
@@ -3632,7 +3670,7 @@ $BtnSettings.Add_Click({
             $argString = ""
             foreach ($arg in $rawArgs) {
                 $a = [string]$arg
-                # FIX: Robustly quote arguments and escape existing quotes to prevent command injection
+                # Robustly quote arguments and escape existing quotes to prevent command injection
                 if ($a -match '[ &|<>]') {
                     $escaped = $a -replace '"', '\"'
                     $argString += " `"$escaped`"" 
@@ -3680,26 +3718,31 @@ $BtnSettings.Add_Click({
     $timer.Add_Tick({
             if (Test-Path -LiteralPath $script:State.tempLog) {
                 try {
-                    # Open with full sharing permissions to prevent FFmpeg from blocking our read
-                    $fs = [System.IO.File]::Open($script:State.tempLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-                    $reader = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
-                
-                    if ($script:State.lastLogPos -lt $reader.BaseStream.Length) {
-                        $reader.BaseStream.Seek($script:State.lastLogPos, [System.IO.SeekOrigin]::Begin) | Out-Null
-                        $newText = $reader.ReadToEnd()
-                        $script:State.lastLogPos = $reader.BaseStream.Position
+                    $newText = ""
+                    try {
+                        # Open with full sharing permissions to prevent FFmpeg from blocking our read
+                        $fs = [System.IO.File]::Open($script:State.tempLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                        $reader = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+                        
+                        if ($script:State.lastLogPos -lt $reader.BaseStream.Length) {
+                            $reader.BaseStream.Seek($script:State.lastLogPos, [System.IO.SeekOrigin]::Begin) | Out-Null
+                            $newText = $reader.ReadToEnd()
+                            $script:State.lastLogPos = $reader.BaseStream.Position
+                        }
                     }
-                    else {
-                        $newText = ""
+                    finally {
+                        # Guarantee stream disposal even if ReadToEnd fails, preventing permanent file lock
+                        if ($null -ne $reader) { $reader.Close() }
+                        if ($null -ne $fs) { $fs.Close() }
                     }
-                    $reader.Close(); $fs.Close()
 
                     if (-not [string]::IsNullOrEmpty($newText)) {
                         $LogBox.AppendText($newText)
                         
                         # Prevent memory leaks and UI freezing during massive FFmpeg/yt-dlp logs
-                        if ($LogBox.Text.Length -gt 50000) {
-                            $LogBox.Text = $LogBox.Text.Substring($LogBox.Text.Length - 40000)
+                        # Keep the buffer strictly smaller to prevent massive WPF layout recalculations
+                        if ($LogBox.Text.Length -gt 15000) {
+                            $LogBox.Text = $LogBox.Text.Substring($LogBox.Text.Length - 10000)
                         }
 
                         if ($CbAutoScrollLog.IsChecked) {
@@ -4038,9 +4081,11 @@ $BtnSettings.Add_Click({
             if ($null -eq $script:State.SupportedSitesCache) {
                 [void][System.Threading.Tasks.Task]::Run([Action] {
                         try {
-                            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                            $wc = New-Object System.Net.WebClient
                             $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
-                            $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -TimeoutSec 10
+                            $script:State.SupportedSitesCache = $wc.DownloadString($rawUrl)
+                            $wc.Dispose()
                         }
                         catch { $script:State.SupportedSitesCache = "fallback_offline" }
                     })
@@ -4128,7 +4173,8 @@ $BtnSettings.Add_Click({
                         [void][System.Windows.MessageBox]::Show("Could not read batch file. It may be open in another program.`n`n$($_.Exception.Message)", "File Error", 0, 16)
                         return
                     }
-                    foreach ($line in $lines) {                        $l = $line.Trim()
+                    foreach ($line in $lines) {
+                        $l = $line.Trim()
                         if (-not [string]::IsNullOrWhiteSpace($l) -and $l -notmatch "^#" -and $l -match "^(https?://|www\.)") {
                             $linksToProcess.Add($l)
                         }
@@ -4159,16 +4205,18 @@ $BtnSettings.Add_Click({
                 if (-not (Test-Path $outDir)) { [void](New-Item -ItemType Directory -Path $outDir -Force) }
                 $script:State.lastOutDir = $outDir
 
-                # --- NEW BATCH PRE-SCAN FOR UNSUPPORTED DOMAINS ---
+                # --- BATCH PRE-SCAN FOR UNSUPPORTED DOMAINS ---
                 $unsupportedDomains = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
                 $validLinks = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
                 
                 # Fetch supported sites list to cache it for the batch check
                 if ($null -eq $script:State.SupportedSitesCache -or $script:State.SupportedSitesCache.Length -eq 0) {
                     try {
-                        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                        $wc = New-Object System.Net.WebClient
                         $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
-                        $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -TimeoutSec 5
+                        $script:State.SupportedSitesCache = $wc.DownloadString($rawUrl)
+                        $wc.Dispose()
                     }
                     catch { $script:State.SupportedSitesCache = "fallback_offline" }
                 }
@@ -5081,15 +5129,20 @@ $BtnSettings.Add_Click({
                     [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ Process-NextJob })
                 }
 
-                # Run file cleanup completely asynchronously so we never freeze the UI button
+                # Run file cleanup asynchronously using pure .NET to ensure Runspace thread safety
                 if ($currentJob -and $currentJob.IsYtDlp -and (Test-Path -LiteralPath $currentJob.OutputDir)) {
                     $outDir = $currentJob.OutputDir
                     $jStart = $currentJob.JobStart
                     [void][System.Threading.Tasks.Task]::Run([Action] {
                             Start-Sleep -Seconds 1 # Give yt-dlp a second to let go of the file lock
-                            Get-ChildItem -LiteralPath $outDir -File | Where-Object {
-                                ($_.Extension -match "\.part$|\.ytdl$|\.temp$|\.jpg$|\.webp$") -and $_.LastWriteTime -ge $jStart
-                            } | ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+                            try {
+                                $dirInfo = New-Object System.IO.DirectoryInfo($outDir)
+                                foreach ($file in $dirInfo.EnumerateFiles()) {
+                                    if (($file.Extension -match "\.part$|\.ytdl$|\.temp$|\.jpg$|\.webp$") -and ($file.LastWriteTime -ge $jStart)) {
+                                        [System.IO.File]::Delete($file.FullName)
+                                    }
+                                }
+                            } catch {}
                         })
                 }
 
