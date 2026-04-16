@@ -635,7 +635,7 @@ try {
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                                        <StackPanel Grid.Row="0" Margin="10"><TextBlock Text="Format" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="A_CFormat" SelectedIndex="0"><ComboBoxItem>MP3</ComboBoxItem><ComboBoxItem>M4A</ComboBoxItem><ComboBoxItem>WAV</ComboBoxItem><ComboBoxItem>FLAC</ComboBoxItem></ComboBox></StackPanel>
+                                        <StackPanel Grid.Row="0" Margin="10"><TextBlock Text="Format" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="A_CFormat" SelectedIndex="0"><ComboBoxItem>MP3</ComboBoxItem><ComboBoxItem>M4A</ComboBoxItem><ComboBoxItem>WAV</ComboBoxItem><ComboBoxItem>FLAC</ComboBoxItem><ComboBoxItem>Copy (Extract Original)</ComboBoxItem></ComboBox></StackPanel>
                                         <StackPanel Grid.Row="0" Grid.Column="1" Margin="10"><TextBlock Text="Quality (Bitrate)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="A_CQual" SelectedIndex="2"><ComboBoxItem>128k</ComboBoxItem><ComboBoxItem>192k</ComboBoxItem><ComboBoxItem>320k</ComboBoxItem><ComboBoxItem>Lossless</ComboBoxItem></ComboBox></StackPanel>
                                         <StackPanel Grid.Row="1" Margin="10"><TextBlock Text="Channels" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="A_CChan" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>Mono</ComboBoxItem><ComboBoxItem>Stereo</ComboBoxItem></ComboBox></StackPanel>
                                         <StackPanel Grid.Row="1" Grid.Column="1" Margin="10"><TextBlock Text="Metadata" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="A_CMeta" SelectedIndex="0"><ComboBoxItem>Keep</ComboBoxItem><ComboBoxItem>Remove</ComboBoxItem></ComboBox></StackPanel>
@@ -2113,18 +2113,27 @@ try {
         
         $argList.AddRange([string[]]@("-i", $inFile, "-vn"))
         $fmt = (Get-CbVal $A_CFormat).ToLower()
-        $audioCodec = if ($fmt -eq "mp3") { "libmp3lame" } elseif ($fmt -eq "flac") { "flac" } elseif ($fmt -eq "wav") { "pcm_s16le" } else { "aac" }
+        $audioCodec = if ($fmt -match "copy") { "copy" } elseif ($fmt -match "mp3") { "libmp3lame" } elseif ($fmt -match "flac") { "flac" } elseif ($fmt -match "wav") { "pcm_s16le" } else { "aac" }
         
-        $qualCb = Get-CbVal $A_CQual
-        if ($qualCb -match "128k") { $argList.AddRange([string[]]@("-b:a", "128k")) } elseif ($qualCb -match "192k") { $argList.AddRange([string[]]@("-b:a", "192k")) } elseif ($qualCb -match "320k") { $argList.AddRange([string[]]@("-b:a", "320k")) }
-        
-        $chanCb = Get-CbVal $A_CChan
-        if ($chanCb -match "Mono") { $argList.AddRange([string[]]@("-ac", "1")) } elseif ($chanCb -match "Stereo") { $argList.AddRange([string[]]@("-ac", "2")) }
-        
-        if ((Get-CbVal $A_CMeta) -match "Remove") { $argList.AddRange([string[]]@("-map_metadata", "-1")) }
-        if ($A_CheckNorm.IsChecked) { $argList.AddRange([string[]]@("-af", "loudnorm")) }
-        
-        $argList.AddRange([string[]]@("-c:a", $audioCodec))
+        if ($audioCodec -eq "copy") {
+            # If copying streams directly, bitrate/channels/filters cannot be applied
+            $argList.AddRange([string[]]@("-c:a", "copy"))
+            if ((Get-CbVal $A_CMeta) -match "Remove") { $argList.AddRange([string[]]@("-map_metadata", "-1")) }
+            # If the user chose copy, assume output file extension should match the original audio stream natively. We use a generic fallback to m4a/aac container if unknown.
+            if ($outFile -match "\.copy") { $outFile = $outFile -replace '\.copy \(extract original\)$', '.m4a' }
+        }
+        else {
+            $qualCb = Get-CbVal $A_CQual
+            if ($qualCb -match "128k") { $argList.AddRange([string[]]@("-b:a", "128k")) } elseif ($qualCb -match "192k") { $argList.AddRange([string[]]@("-b:a", "192k")) } elseif ($qualCb -match "320k") { $argList.AddRange([string[]]@("-b:a", "320k")) }
+            
+            $chanCb = Get-CbVal $A_CChan
+            if ($chanCb -match "Mono") { $argList.AddRange([string[]]@("-ac", "1")) } elseif ($chanCb -match "Stereo") { $argList.AddRange([string[]]@("-ac", "2")) }
+            
+            if ((Get-CbVal $A_CMeta) -match "Remove") { $argList.AddRange([string[]]@("-map_metadata", "-1")) }
+            if ($A_CheckNorm.IsChecked) { $argList.AddRange([string[]]@("-af", "loudnorm")) }
+            
+            $argList.AddRange([string[]]@("-c:a", $audioCodec))
+        }
         
         if (-not $ExcludeCustom -and $A_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($A_CustomParams.Text)) {
             $pattern = "`"[^`"]+`"|'[^']+'|[^ ]+"
@@ -2995,27 +3004,34 @@ $BtnSettings.Add_Click({
                 $duration = $endSecs - $startSecs
                 if ($duration -le 0) { throw "Invalid duration calculated." }
 
-                # Loop through and grab 10 frames
+                # Phase 1: Launch all 10 FFmpeg extractions in parallel
+                $procs = @()
                 for ($i = 1; $i -le 10; $i++) {
-                    # Calculate percentage (approx 9%, 18%, 27%... up to 90%)
                     $percent = $i * 9 
                     $targetSec = $startSecs + ($duration * ($percent / 100.0))
-                
-                    # Format to HH:mm:ss
                     $ts = [TimeSpan]::FromSeconds($targetSec)
                     $timeStr = "{0:D2}:{1:D2}:{2:D2}" -f [int][math]::Floor($ts.TotalHours), $ts.Minutes, $ts.Seconds
-
+                    
                     $outThumb = Join-Path $env:TEMP "thumb_preview_$i.jpg"
                     if (Test-Path $outThumb) { Remove-Item $outThumb -Force -ErrorAction SilentlyContinue }
 
-                    # Fast seeking extraction - Increased scale to 200px width for better quality on bigger display
                     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
                     $pinfo.FileName = $script:State.ffmpeg
                     $pinfo.Arguments = "-y -hide_banner -ss $timeStr -i `"$filePath`" -frames:v 1 -q:v 2 -vf scale=200:-1 `"$outThumb`""
                     $pinfo.UseShellExecute = $false; $pinfo.CreateNoWindow = $true
-                    $p = [System.Diagnostics.Process]::Start($pinfo)
-                    $p.WaitForExit()
-                    $p.Dispose()
+                    $procs += [System.Diagnostics.Process]::Start($pinfo)
+                }
+
+                # Phase 2: Wait for all extractions to complete simultaneously
+                foreach ($p in $procs) { $p.WaitForExit(); $p.Dispose() }
+
+                # Phase 3: Load generated images into UI safely
+                for ($i = 1; $i -le 10; $i++) {
+                    $percent = $i * 9
+                    $targetSec = $startSecs + ($duration * ($percent / 100.0))
+                    $ts = [TimeSpan]::FromSeconds($targetSec)
+                    $timeStr = "{0:D2}:{1:D2}:{2:D2}" -f [int][math]::Floor($ts.TotalHours), $ts.Minutes, $ts.Seconds
+                    $outThumb = Join-Path $env:TEMP "thumb_preview_$i.jpg"
 
                     if (Test-Path $outThumb) {
                         $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
@@ -3028,16 +3044,15 @@ $BtnSettings.Add_Click({
                     
                         $img = New-Object System.Windows.Controls.Image
                         $img.Source = $bmp
-                        $img.Height = 100 # Increased from 60 to 100
+                        $img.Height = 100 
                         $img.Margin = New-Object System.Windows.Thickness(0, 0, 8, 0)
                         $img.ToolTip = "Position: $percent% ($timeStr)"
                     
                         [void]$V_PreviewStack.Children.Add($img)
-                    
-                        # Force UI to draw the new larger image immediately
-                        $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
                     }
                 }
+                # Force UI to draw once at the very end
+                $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
             }
             catch {
                 [void][System.Windows.MessageBox]::Show("Timeline generation failed: $($_.Exception.Message)", "Error", 0, 16)
@@ -3627,9 +3642,9 @@ $BtnSettings.Add_Click({
                 }
             }
 
-            # 5. UI PUMP (Clears spinning icon)
+            # 5. UI PUMP (Clears spinning icon natively without WinForms leaks)
             $window.Cursor = [System.Windows.Input.Cursors]::Arrow
-            [System.Windows.Forms.Application]::DoEvents()
+            $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
 
             # 6. Logging
             $friendlyToolName = if ($job.IsYtDlp) { "yt-dlp" } elseif ($job.CustomTool) { [System.IO.Path]::GetFileNameWithoutExtension($job.CustomTool) } else { "ffmpeg" }
@@ -4530,7 +4545,11 @@ $BtnSettings.Add_Click({
                     
                     $inFile = $S_ScribeIn.Text
                     $ts = Get-Date -Format "yyyyMMdd_HHmmss"
-                    $whisperOutDir = Join-Path (Split-Path $inFile -Parent) "transcribe_$ts"
+                    
+                    # Prevent crashes when reading files from Read-Only drives (CD/DVD/USB)
+                    $baseOutDir = if ($Config.DefaultOutDir -and (Test-Path $Config.DefaultOutDir)) { $Config.DefaultOutDir } else { Join-Path $ScriptDir "convert\transcribed" }
+                    $whisperOutDir = Join-Path $baseOutDir "transcribe_$ts"
+                    
                     if (-not (Test-Path $whisperOutDir)) { [void](New-Item -ItemType Directory -Path $whisperOutDir -Force) }
                     
                     $script:State.lastOutDir = $whisperOutDir
