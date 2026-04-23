@@ -5123,6 +5123,7 @@ $BtnSettings.Add_Click({
             $LogBox.AppendText("[RESET] All fields and queues have been cleared. Attention: Log will be cleared in 1 second.`r`n")
             
             # Use a script-scoped DispatcherTimer so it survives the button click ending
+            if ($null -ne $script:resetTimer) { $script:resetTimer.Stop() }
             $script:resetTimer = New-Object System.Windows.Threading.DispatcherTimer
             $script:resetTimer.Interval = [TimeSpan]::FromSeconds(1) # Delay to ensure any pending UI updates are flushed before clearing the log
             $script:resetTimer.Add_Tick({
