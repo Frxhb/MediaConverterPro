@@ -1866,10 +1866,10 @@ try {
     function Update-YtDlpPreview {
         if (-not $Y_CheckCustomParams.IsChecked) { return }
         
-        $args = Get-YtDlpArgs -isPreview $true -ExcludeCustom $false -PlaylistFlag "" -TargetLink $Y_Link.Text.Trim()
-        if ($null -eq $args) { return }
+        $cmdArgs = Get-YtDlpArgs -isPreview $true -ExcludeCustom $false -PlaylistFlag "" -TargetLink $Y_Link.Text.Trim()
+        if ($null -eq $cmdArgs) { return }
         
-        $formattedArgs = foreach ($a in $args) {
+        $formattedArgs = foreach ($a in $cmdArgs) {
             if ($a -match '\s' -and $a -notmatch '^\[.*\]$') { "`"$a`"" } else { $a }
         }
         if ($Y_ParamsPreview) { $Y_ParamsPreview.Text = "yt-dlp " + ($formattedArgs -join " ") }
@@ -2155,8 +2155,8 @@ try {
         $fmt = (Get-CbVal $V_CFormat).ToLower()
         $outFile = Join-Path $outDir "$name.$fmt"
         
-        $args = (Get-FfmpegArgs -IsPreview $true -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
-        $formattedArgs = foreach ($a in $args) {
+        $cmdArgs = (Get-FfmpegArgs -IsPreview $true -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
+        $formattedArgs = foreach ($a in $cmdArgs) {
             if ($a -match '\s' -and $a -notmatch '^\[.*\]$') { "`"$a`"" } else { $a }
         }
         if ($V_ParamsPreview) { $V_ParamsPreview.Text = "ffmpeg " + ($formattedArgs -join " ") }
@@ -2230,8 +2230,8 @@ try {
         $fmt = (Get-CbVal $A_CFormat).ToLower()
         $outFile = Join-Path $outDir "$name.$fmt"
         
-        $args = (Get-AudioFfmpegArgs -IsPreview $true -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
-        $formattedArgs = foreach ($a in $args) {
+        $cmdArgs = (Get-AudioFfmpegArgs -IsPreview $true -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
+        $formattedArgs = foreach ($a in $cmdArgs) {
             if ($a -match '\s' -and $a -notmatch '^\[.*\]$') { "`"$a`"" } else { $a }
         }
         if ($A_ParamsPreview) { $A_ParamsPreview.Text = "ffmpeg " + ($formattedArgs -join " ") }
@@ -2868,21 +2868,21 @@ $BtnSettings.Add_Click({
     
     function SetupDragReorder ([System.Windows.Controls.ListBox]$lb, [string]$extRegex, [scriptblock]$checkExt) {
         $lb.Add_PreviewMouseMove({
-                param($sender, $e)
-                if ($e.LeftButton -eq [System.Windows.Input.MouseButtonState]::Pressed -and $sender.SelectedItem) {
-                    [void][System.Windows.DragDrop]::DoDragDrop($sender, $sender.SelectedItem.ToString(), [System.Windows.DragDropEffects]::Move)
+                param($uiSender, $e)
+                if ($e.LeftButton -eq [System.Windows.Input.MouseButtonState]::Pressed -and $uiSender.SelectedItem) {
+                    [void][System.Windows.DragDrop]::DoDragDrop($uiSender, $uiSender.SelectedItem.ToString(), [System.Windows.DragDropEffects]::Move)
                 }
             })
         $lb.Add_PreviewDragOver($DragEnterHandler)
         $lb.Add_DragLeave($DragLeaveHandler)
         $lb.Add_Drop({
-                param($sender, $e)
-                $sender.Background = $window.Resources["InputBgBrush"]
+                param($uiSender, $e)
+                $uiSender.Background = $window.Resources["InputBgBrush"]
             
                 # 1. Handle external file drop from Windows Explorer
                 if ($e.Data.GetDataPresent([System.Windows.DataFormats]::FileDrop)) {
                     $rx = if ($checkExt) { &$checkExt } else { $extRegex }
-                    Add-ToList $sender ($e.Data.GetData([System.Windows.DataFormats]::FileDrop)) $rx
+                    Add-ToList $uiSender ($e.Data.GetData([System.Windows.DataFormats]::FileDrop)) $rx
                 }
                 # 2. Handle internal reordering drop
                 elseif ($e.Data.GetDataPresent([System.String])) {
@@ -2890,12 +2890,12 @@ $BtnSettings.Add_Click({
                     $targetItem = if ($e.OriginalSource.DataContext) { $e.OriginalSource.DataContext } else { $e.OriginalSource }
                 
                     if ($targetItem -is [string] -and $targetItem -ne $droppedData) {
-                        $targetIndex = $sender.Items.IndexOf($targetItem)
-                        $sourceIndex = $sender.Items.IndexOf($droppedData)
+                        $targetIndex = $uiSender.Items.IndexOf($targetItem)
+                        $sourceIndex = $uiSender.Items.IndexOf($droppedData)
                         if ($sourceIndex -ge 0 -and $targetIndex -ge 0) {
-                            $sender.Items.RemoveAt($sourceIndex)
-                            $sender.Items.Insert($targetIndex, $droppedData)
-                            $sender.SelectedItem = $droppedData
+                            $uiSender.Items.RemoveAt($sourceIndex)
+                            $uiSender.Items.Insert($targetIndex, $droppedData)
+                            $uiSender.SelectedItem = $droppedData
                             Update-AllPreviews
                         }
                     }
@@ -3651,7 +3651,7 @@ $BtnSettings.Add_Click({
                     $pFs = [System.Diagnostics.Process]::Start($pinfoF)
                     
                     $fStr = $pFs.StandardOutput.ReadToEnd().Trim()
-                    $errDump = $pFs.StandardError.ReadToEnd()
+                    [void]$pFs.StandardError.ReadToEnd()
                     
                     if (-not $pFs.WaitForExit(3000)) { try { $pFs.Kill() } catch {} }
                     else {
