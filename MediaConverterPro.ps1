@@ -255,7 +255,7 @@ try {
         $env:PATH = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 
         # Check for system-installed yt-dlp (specifically WinGet/WindowsApps)
-        $sysCheck = Get-Command "yt-dlp.exe" -ErrorAction SilentlyContinue
+        $sysCheck = Get-Command "yt-dlp.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($sysCheck) {
             if ($sysCheck.Source -match "WinGet" -or $sysCheck.Source -match "WindowsApps") {
                 $script:State.ytdlp = $sysCheck.Source
@@ -275,13 +275,13 @@ try {
         }
 
         # Locate ffmpeg and ffprobe globally
-        $sysFfmpeg = Get-Command "ffmpeg.exe" -ErrorAction SilentlyContinue
+        $sysFfmpeg = Get-Command "ffmpeg.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($sysFfmpeg) { 
             $script:State.ffmpeg = $sysFfmpeg.Source
             $script:State.ffmpegFound = $true 
         }
 
-        $sysFfprobe = Get-Command "ffprobe.exe" -ErrorAction SilentlyContinue
+        $sysFfprobe = Get-Command "ffprobe.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($sysFfprobe) { 
             $script:State.ffprobe = $sysFfprobe.Source
             $script:State.ffprobeFound = $true 
@@ -3645,7 +3645,7 @@ $BtnSettings.Add_Click({
                 try {
                     $pinfoF = New-Object System.Diagnostics.ProcessStartInfo
                     $pinfoF.FileName = $script:State.ffprobe
-                    $pinfoF.Arguments = "-v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 `"$($job.InputFile)`""
+                    $pinfoF.Arguments = '-v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 "{0}"' -f ($job.InputFile -replace '"', '\"')
                     $pinfoF.UseShellExecute = $false; $pinfoF.RedirectStandardOutput = $true; $pinfoF.RedirectStandardError = $true; $pinfoF.CreateNoWindow = $true
                     $pFs = [System.Diagnostics.Process]::Start($pinfoF)
                     
@@ -3661,7 +3661,7 @@ $BtnSettings.Add_Click({
                     # Fetch total duration safely before FFmpeg starts to guarantee ETA calc works
                     $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
                     $pinfoDur.FileName = $script:State.ffprobe
-                    $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($job.InputFile)`""
+                    $pinfoDur.Arguments = '-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{0}"' -f ($job.InputFile -replace '"', '\"')
                     $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
                     $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
                     
@@ -3687,18 +3687,11 @@ $BtnSettings.Add_Click({
             }
             foreach ($arg in $job.Args) { $rawArgs += $arg.ToString().Trim() }
             
-            $argString = ""
-            foreach ($arg in $rawArgs) {
-                $a = [string]$arg
+            $argString = ($rawArgs | ForEach-Object {
+                $a = [string]$_
                 # Robustly quote arguments and escape existing quotes to prevent command injection
-                if ($a -match '[ &|<>]') {
-                    $escaped = $a -replace '"', '\"'
-                    $argString += " `"$escaped`"" 
-                }
-                else { 
-                    $argString += " $a" 
-                }
-            }
+                if ($a -match '[ &|<>]') { "`"$($a -replace '"', '\"')`"" } else { $a }
+            }) -join " "
 
             # 5. UI PUMP (Clears spinning icon natively without WinForms leaks)
             $window.Cursor = [System.Windows.Input.Cursors]::Arrow
