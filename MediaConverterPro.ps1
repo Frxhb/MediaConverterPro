@@ -2158,12 +2158,10 @@ try {
         $outFile = Join-Path $outDir "$name.$fmt"
         
         $args = (Get-FfmpegArgs -IsPreview $true -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
-        $previewString = "ffmpeg "
-        foreach ($a in $args) {
-            if ($a -match '\s' -and $a -notmatch '^\[.*\]$') { $previewString += "`"$a`" " }
-            else { $previewString += "$a " }
+        $formattedArgs = foreach ($a in $args) {
+            if ($a -match '\s' -and $a -notmatch '^\[.*\]$') { "`"$a`"" } else { $a }
         }
-        if ($V_ParamsPreview) { $V_ParamsPreview.Text = $previewString.Trim() }
+        if ($V_ParamsPreview) { $V_ParamsPreview.Text = "ffmpeg " + ($formattedArgs -join " ") }
     }
 
     # Function to build arguments for ffmpeg (Audio tab) based on UI selections
@@ -2235,12 +2233,10 @@ try {
         $outFile = Join-Path $outDir "$name.$fmt"
         
         $args = (Get-AudioFfmpegArgs -IsPreview $true -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
-        $previewString = "ffmpeg "
-        foreach ($a in $args) {
-            if ($a -match '\s' -and $a -notmatch '^\[.*\]$') { $previewString += "`"$a`" " }
-            else { $previewString += "$a " }
+        $formattedArgs = foreach ($a in $args) {
+            if ($a -match '\s' -and $a -notmatch '^\[.*\]$') { "`"$a`"" } else { $a }
         }
-        if ($A_ParamsPreview) { $A_ParamsPreview.Text = $previewString.Trim() }
+        if ($A_ParamsPreview) { $A_ParamsPreview.Text = "ffmpeg " + ($formattedArgs -join " ") }
     }
 
     # Setup a DispatcherTimer to "debounce" UI updates (prevents lag when typing fast)
@@ -3763,9 +3759,9 @@ $BtnSettings.Add_Click({
                         }
                     }
                     finally {
-                        # Guarantee stream disposal even if ReadToEnd fails, preventing permanent file lock
-                        if ($null -ne $reader) { $reader.Close() }
-                        if ($null -ne $fs) { $fs.Close() }
+                        # Guarantee stream disposal. Disposing the reader automatically disposes the underlying stream.
+                        if ($null -ne $reader) { $reader.Dispose() }
+                        elseif ($null -ne $fs) { $fs.Dispose() }
                     }
 
                     if (-not [string]::IsNullOrEmpty($newText)) {
