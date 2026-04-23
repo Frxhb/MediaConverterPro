@@ -4496,7 +4496,7 @@ $BtnSettings.Add_Click({
                             [datetime]$StartTime,
                             [string[]]$ExistingFiles
                         )
-                        $candidates = Get-ChildItem -Path $OutDir -File -ErrorAction SilentlyContinue
+                        $candidates = Get-ChildItem -LiteralPath $OutDir -File -ErrorAction SilentlyContinue
                         foreach ($f in $candidates) {
                             if ($ExistingFiles.Contains($f.FullName)) { continue }
 
