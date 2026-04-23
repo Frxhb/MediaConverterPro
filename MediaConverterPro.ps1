@@ -1559,7 +1559,7 @@ try {
             $tbMsg.Inlines.Add($tbAdmin)
         }
 
-        if (-not $script:isWinGetVersion) { $tbMsg.Inlines.Add("- yt-dlp (WinGet version) -> Missing`n") }
+        if (-not $script:State.ytdlpFound) { $tbMsg.Inlines.Add("- yt-dlp -> Missing`n") }
         if (-not $script:State.ffmpegFound) { $tbMsg.Inlines.Add("- FFmpeg -> Missing`n") }
         if (-not $script:State.handbrakeFound) { $tbMsg.Inlines.Add("- HandBrakeCLI -> Missing`n") }
         if (-not $script:State.jsRuntimeFound) { $tbMsg.Inlines.Add("- Node.js / Deno -> Missing`n") }
@@ -1618,9 +1618,9 @@ try {
             $env:PATH = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
             Find-Tools
         
-            if ($script:State.ffmpegFound -and $script:State.handbrakeFound -and $script:isWinGetVersion -and $script:State.jsRuntimeFound) {
-                $StatusText.Text = "WinGet Tools Ready."; $StatusText.Foreground = "#10B981"
-                [void][System.Windows.MessageBox]::Show("Dependencies successfully installed!", "Success", 0, 64)
+            if ($script:State.ffmpegFound -and $script:State.handbrakeFound -and $script:State.ytdlpFound -and $script:State.jsRuntimeFound) {
+                $StatusText.Text = "Tools Ready."; $StatusText.Foreground = "#10B981"
+                [void][System.Windows.MessageBox]::Show("Dependencies successfully installed or detected!", "Success", 0, 64)
             }
             else {
                 $StatusText.Text = "Installation Incomplete."; $StatusText.Foreground = "#EF4444"
