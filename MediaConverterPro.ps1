@@ -3068,9 +3068,7 @@ $BtnSettings.Add_Click({
                 foreach ($p in $procs) { 
                     $timeout = (Get-Date).AddSeconds(15)
                     while (-not $p.HasExited) {
-                        $frame = New-Object System.Windows.Threading.DispatcherFrame
-                        $window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Background, [Action]{ $frame.Continue = $false }) | Out-Null
-                        [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+                        $window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
                         Start-Sleep -Milliseconds 20
                         if ((Get-Date) -gt $timeout) { try { $p.Kill() } catch {}; break }
                     }
@@ -5230,7 +5228,10 @@ $BtnSettings.Add_Click({
             Get-ChildItem -Path $env:TEMP -Filter "thumb_*.jpg" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
         
             # Kill System Tray icon to prevent "ghost" icons from lingering
-            if ($script:TrayIcon) { $script:TrayIcon.Dispose() }
+            if ($script:TrayIcon) { 
+                $script:TrayIcon.Visible = $false
+                $script:TrayIcon.Dispose() 
+            }
         })
     [void]$window.ShowDialog()
 }
