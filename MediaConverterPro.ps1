@@ -95,6 +95,9 @@ function Write-ConvertLog {
     for ($i = 0; $i -lt 3; $i++) { try { [System.IO.File]::AppendAllText($ConvertLog, $entry); break } catch { Start-Sleep -Milliseconds 50 } }
 }
 
+# Initialize a global set to prevent queue overwrite race conditions
+$script:ReservedFilenames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+
 # Function to generate a unique filename to prevent overwriting existing files
 function Get-UniqueFileName ([string]$FilePath) {
     $dir = [System.IO.Path]::GetDirectoryName($FilePath)
@@ -103,10 +106,11 @@ function Get-UniqueFileName ([string]$FilePath) {
     $newPath = $FilePath
     $counter = 1
     
-    while (Test-Path -LiteralPath $newPath) {
+    while ((Test-Path -LiteralPath $newPath) -or $script:ReservedFilenames.Contains($newPath)) {
         $newPath = Join-Path $dir "$name ($counter)$ext"
         $counter++
     }
+    [void]$script:ReservedFilenames.Add($newPath)
     return $newPath
 }
 
