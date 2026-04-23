@@ -3406,9 +3406,10 @@ $BtnSettings.Add_Click({
             }
             if ($hostName -match "youtu\.be") { $domainPart = "youtube" }
 
-            $commonSites = @("youtube", "youtu", "arte", "vimeo", "twitch", "facebook", "instagram", "twitter", "x", "tiktok", "soundcloud", "dailymotion", "reddit", "kick", "rumble")
+            $commonSites = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            [void]$commonSites.UnionWith(@("youtube", "youtu", "arte", "vimeo", "twitch", "facebook", "instagram", "twitter", "x", "tiktok", "soundcloud", "dailymotion", "reddit", "kick", "rumble"))
         
-            if ($commonSites -contains $domainPart -or $commonSites -contains $hostName) {
+            if ($commonSites.Contains($domainPart) -or $commonSites.Contains($hostName)) {
                 $isSupported = $true
             }
 
