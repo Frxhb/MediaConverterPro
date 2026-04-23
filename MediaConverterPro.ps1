@@ -3166,15 +3166,10 @@ $BtnSettings.Add_Click({
             $stdOutTask = $p.StandardOutput.ReadToEndAsync()
             $stdErrTask = $p.StandardError.ReadToEndAsync()
             
-            # Keep UI responsive using native WPF Dispatcher frames (Avoids WinForms memory leaks)
+            # Keep UI responsive using native WPF Dispatcher invocation (Avoids GC allocation spikes)
             $timeout = (Get-Date).AddSeconds(10)
             while (-not $p.HasExited) {
-                $frame = New-Object System.Windows.Threading.DispatcherFrame
-                [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
-                    [System.Windows.Threading.DispatcherPriority]::Background,
-                    [Action]{ $frame.Continue = $false }
-                ) | Out-Null
-                [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+                [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
                 Start-Sleep -Milliseconds 50
                 if ((Get-Date) -gt $timeout) { break }
             }
