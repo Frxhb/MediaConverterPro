@@ -4898,7 +4898,7 @@ $BtnSettings.Add_Click({
                     $inFilePath = $S_UpscaleIn.Text
                     try {
                         # Resolve short paths via native Win32 API to avoid COM overhead/AV blocks
-                        $sb = New-Object System.Text.StringBuilder(255)
+                        $sb = New-Object System.Text.StringBuilder(32767)
                         if (Test-Path $mDir) { [void][WinApi.PathHelper]::GetShortPathName($mDir, $sb, $sb.Capacity); $mDir = $sb.ToString() }
                         if (Test-Path $inFilePath) { [void][WinApi.PathHelper]::GetShortPathName($inFilePath, $sb, $sb.Capacity); $inFilePath = $sb.ToString() }
                         if (Test-Path $esrganOutDir) { 
