@@ -3036,7 +3036,6 @@ $BtnSettings.Add_Click({
                 if ($child -is [System.Windows.Controls.Image]) { $child.Source = $null }
             }
             $V_PreviewStack.Children.Clear()
-            [System.GC]::Collect()
             $V_PreviewScroll.Visibility = "Visible"
             $V_BtnGenPreview.IsEnabled = $false
             $V_BtnGenPreview.Content = "Generating..."
