@@ -4407,8 +4407,6 @@ $BtnSettings.Add_Click({
                     $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
                     $window.Cursor = [System.Windows.Input.Cursors]::Wait
 
-                    $tempJson = Join-Path $env:TEMP "yt_playlist_$([guid]::NewGuid().ToString().Substring(0,8)).json"
-                    
                     # Call yt-dlp to get flat playlist json
                     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
                     $pinfo.FileName = $script:State.ytdlp
