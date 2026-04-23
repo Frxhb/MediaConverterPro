@@ -52,6 +52,19 @@ $WM_COPYDATA = 0x004A
 $WM_COPYGLOBALDATA = 0x0049
 $MSGFLT_ALLOW = 1
 
+$shortPathCode = @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class PathHelper {
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+    public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
+}
+'@
+if (-not ("WinApi.PathHelper" -as [type])) {
+    Add-Type -TypeDefinition $shortPathCode -Namespace WinApi
+}
+
 # Save the WinAPI variables to the script scope so we can apply them safely after the WPF Window renders
 $script:winApi = $winApi
 $script:WM_DROPFILES = $WM_DROPFILES
@@ -200,6 +213,17 @@ try {
         SupportedSitesCache    = $null
         CustomFilenames        = @{}
         IsAutoUpdatingFilename = $false
+        Regex                  = @{
+            FFmpegTime  = [regex]::new("time=\s*(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            FFmpegFrame = [regex]::new("frame=\s*(\d+)", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            HbProg      = [regex]::new("Encoding: task \d+ of \d+, (\d+\.\d+) %", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            HbETA       = [regex]::new("ETA ([\dhms]+)", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            YtDlpProg   = [regex]::new("\[download\]\s+(\d+\.?\d*)%", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            YtDlpETA    = [regex]::new("ETA\s+(\d+:\d+)", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            UpscaylProg = [regex]::new("(\d+\.\d+)%", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            WhisperTime = [regex]::new("-->\s*(?:(\d{2,3}):)?(\d{2}):(\d{2})\.(\d{3})", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+            Speed       = [regex]::new("speed=\s*(\d+(?:\.\d+)?)x", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+        }
     }
 
     # Function to locate all required third-party tools on the host system
@@ -1631,10 +1655,8 @@ try {
                         [void][System.Threading.Tasks.Task]::Run([Action] {
                                 try {
                                     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-                                    $wc = New-Object System.Net.WebClient
                                     $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
-                                    $script:State.SupportedSitesCache = $wc.DownloadString($rawUrl)
-                                    $wc.Dispose()
+                                    $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -ErrorAction Stop
                                 }
                                 catch { $script:State.SupportedSitesCache = "fallback_offline" }
                             })
@@ -3011,7 +3033,11 @@ $BtnSettings.Add_Click({
             $startText = $V_TrimStart.Text
             $endText = $V_TrimEnd.Text
 
+            foreach ($child in $V_PreviewStack.Children) {
+                if ($child -is [System.Windows.Controls.Image]) { $child.Source = $null }
+            }
             $V_PreviewStack.Children.Clear()
+            [System.GC]::Collect()
             $V_PreviewScroll.Visibility = "Visible"
             $V_BtnGenPreview.IsEnabled = $false
             $V_BtnGenPreview.Content = "Generating..."
@@ -3800,13 +3826,13 @@ $BtnSettings.Add_Click({
                         }
 
                         if ($job.CustomTool -match "HandBrakeCLI") {
-                            $hbMatches = [regex]::Matches($newText, "Encoding: task \d+ of \d+, (\d+\.\d+) %")
+                            $hbMatches = $script:State.Regex.HbProg.Matches($newText)
                             if ($hbMatches.Count -gt 0) {
                                 try {
                                     $PBar.Value = [math]::Min(100.0, [double]::Parse($hbMatches[$hbMatches.Count - 1].Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture))
                                     $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
                                     
-                                    $hbEta = [regex]::Matches($newText, "ETA ([\dhms]+)")
+                                    $hbEta = $script:State.Regex.HbETA.Matches($newText)
                                     if ($hbEta.Count -gt 0) { $TxtETA.Text = "ETA: " + $hbEta[$hbEta.Count - 1].Groups[1].Value }
                                 } catch {}
                             }
@@ -3814,19 +3840,19 @@ $BtnSettings.Add_Click({
 
                         if ($job.IsYtDlp) {
                             # Regex logic to capture yt-dlp percentage and string ETA
-                            $percentMatches = [regex]::Matches($newText, "\[download\]\s+(\d+\.?\d*)%")
+                            $percentMatches = $script:State.Regex.YtDlpProg.Matches($newText)
                             if ($percentMatches.Count -gt 0) {
                                 $PBar.Value = [math]::Round([double]$percentMatches[$percentMatches.Count - 1].Groups[1].Value)
                                 $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
                             }
-                            $etaMatches = [regex]::Matches($newText, "ETA\s+(\d+:\d+)")
+                            $etaMatches = $script:State.Regex.YtDlpETA.Matches($newText)
                             if ($etaMatches.Count -gt 0) {
                                 $TxtETA.Text = "ETA: " + $etaMatches[$etaMatches.Count - 1].Groups[1].Value
                             }
                         }
                         elseif ($newText -match "(\d+\.\d+)%") {
                             # Regex Logic for Upscayl percentage 
-                            $upscaleMatches = [regex]::Matches($newText, "(\d+\.\d+)%")
+                            $upscaleMatches = $script:State.Regex.UpscaylProg.Matches($newText)
                             try {
                                 $PBar.Value = [math]::Min(100.0, [double]::Parse($upscaleMatches[$upscaleMatches.Count - 1].Groups[1].Value, [System.Globalization.CultureInfo]::InvariantCulture))
                                 $TaskbarProgress.ProgressValue = ($PBar.Value / 100)
@@ -3836,7 +3862,7 @@ $BtnSettings.Add_Click({
                         }
                         elseif ($job.IsWhisper -and $script:State.totalDuration -gt 0) {
                             # Regex logic mapping Whisper VTT output string lines back into duration
-                            $whisperMatches = [regex]::Matches($newText, "-->\s*(?:(\d{2,3}):)?(\d{2}):(\d{2})\.(\d{3})")
+                            $whisperMatches = $script:State.Regex.WhisperTime.Matches($newText)
                             if ($whisperMatches.Count -gt 0) {
                                 $wm = $whisperMatches[$whisperMatches.Count - 1]
                                 try {
@@ -3854,8 +3880,8 @@ $BtnSettings.Add_Click({
                         # RESTORED & BULLETPROOFED: FFmpeg Progress Tracker with ETA Calculation
                         elseif ($script:State.totalDuration -gt 0) {
                         
-                            $timeMatches = [regex]::Matches($newText, "time=\s*(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?")
-                            $frameMatches = [regex]::Matches($newText, "frame=\s*(\d+)")
+                            $timeMatches = $script:State.Regex.FFmpegTime.Matches($newText)
+                            $frameMatches = $script:State.Regex.FFmpegFrame.Matches($newText)
                         
                             if ($timeMatches.Count -gt 0) {
                                 try {
@@ -3874,7 +3900,7 @@ $BtnSettings.Add_Click({
                                     $PBar.Value = $prog
                                     $TaskbarProgress.ProgressValue = ($prog / 100)
 
-                                    $speedMatches = [regex]::Matches($newText, "speed=\s*(\d+(?:\.\d+)?)x")
+                                    $speedMatches = $script:State.Regex.Speed.Matches($newText)
                                     if ($speedMatches.Count -gt 0) {
                                         $speedStr = $speedMatches[$speedMatches.Count - 1].Groups[1].Value
                                         $speed = 0.0
@@ -4924,16 +4950,16 @@ $BtnSettings.Add_Click({
 
                     $inFilePath = $S_UpscaleIn.Text
                     try {
-                        # Resolve short paths to avoid spacing issues when passed to cmd buffer
-                        $fso = New-Object -ComObject Scripting.FileSystemObject
-                        if (Test-Path $mDir) { $mDir = $fso.GetFolder($mDir).ShortPath }
-                        if (Test-Path $inFilePath) { $inFilePath = $fso.GetFile($inFilePath).ShortPath }
+                        # Resolve short paths via native Win32 API to avoid COM overhead/AV blocks
+                        $sb = New-Object System.Text.StringBuilder(255)
+                        if (Test-Path $mDir) { [void][WinApi.PathHelper]::GetShortPathName($mDir, $sb, $sb.Capacity); $mDir = $sb.ToString() }
+                        if (Test-Path $inFilePath) { [void][WinApi.PathHelper]::GetShortPathName($inFilePath, $sb, $sb.Capacity); $inFilePath = $sb.ToString() }
                         if (Test-Path $esrganOutDir) { 
-                            $shortOutDir = $fso.GetFolder($esrganOutDir).ShortPath 
-                            $outFile = Join-Path $shortOutDir (Split-Path $outFile -Leaf)
+                            [void][WinApi.PathHelper]::GetShortPathName($esrganOutDir, $sb, $sb.Capacity)
+                            $outFile = Join-Path $sb.ToString() (Split-Path $outFile -Leaf)
                         }
                     }
-                    catch {}
+                    catch { Write-Warning "Short path resolution failed: $_" }
 
                     $argArray = @("-i", $inFilePath, "-o", $outFile, "-n", $model, "-s", $scale, "-m", $mDir)
 
