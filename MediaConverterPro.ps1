@@ -1527,7 +1527,7 @@ try {
     function MissingToolsCheck {
         Find-Tools
 
-        if ($script:State.ffmpegFound -and $script:State.handbrakeFound -and $script:isWinGetVersion -and $script:State.jsRuntimeFound) {
+        if ($script:State.ffmpegFound -and $script:State.handbrakeFound -and $script:State.ytdlpFound -and $script:State.jsRuntimeFound) {
             $StatusText.Text = "Ready."
             $StatusText.Foreground = $window.Resources["TextBrush"]
             return
