@@ -3426,12 +3426,7 @@ $BtnSettings.Add_Click({
                     catch { $script:State.SupportedSitesCache = "fallback_offline" }
                 }
             
-                if ($script:State.SupportedSitesCache -is [array]) {
-                    if ($script:State.SupportedSitesCache -match $domainPart) { $isSupported = $true }
-                }
-                else {
-                    if ($script:State.SupportedSitesCache -match "(?i)\b$domainPart\b") { $isSupported = $true }
-                }
+                if ($script:State.SupportedSitesCache -match "(?i)\b$domainPart\b") { $isSupported = $true }
             }
         }
         catch { $isSupported = $true }
@@ -4289,12 +4284,7 @@ $BtnSettings.Add_Click({
                         if ($commonSites -contains $domainPart -or $commonSites -contains $hostName) { $isSup = $true }
 
                         if (-not $isSup) {
-                            if ($script:State.SupportedSitesCache -is [array]) {
-                                if ($script:State.SupportedSitesCache -match $domainPart) { $isSup = $true }
-                            }
-                            else {
-                                if ($script:State.SupportedSitesCache -match "(?i)\b$domainPart\b") { $isSup = $true }
-                            }
+                            if ($script:State.SupportedSitesCache -match "(?i)\b$domainPart\b") { $isSup = $true }
                         }
                     }
                     catch { $isSup = $true }
