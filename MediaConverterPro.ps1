@@ -4341,7 +4341,7 @@ $BtnSettings.Add_Click({
                 $isBatch = ($linksToProcess.Count -gt 1)
 
                 # --- NEW CUSTOM PLAYLIST DIALOG FUNCTION ---
-                function Show-PlaylistDialog([string]$linkUrl) {
+                function Show-PlaylistDialog([string]$linkUrl, [bool]$isBatch) {
                     $win = New-Object System.Windows.Window
                     $win.Title = "Playlist Detected"
                     $win.SizeToContent = "WidthAndHeight"; $win.WindowStartupLocation = "CenterScreen"
@@ -4353,13 +4353,12 @@ $BtnSettings.Add_Click({
                     $tb = New-Object System.Windows.Controls.TextBlock
                     $tb.TextWrapping = "Wrap"; $tb.MaxWidth = 450; $tb.Margin = "0,0,0,15"
                     $tb.Foreground = $window.Resources["TextBrush"]
-                    $tb.Text = "A Playlist was detected in the batch with the following link:`n`n$linkUrl`n`nHow would you like to handle this for this or other playlists in the batch?"
+                    $tb.Text = "A Playlist was detected with the following link:`n`n$linkUrl`n`nHow would you like to handle this?"
                     [void]$sp.Children.Add($tb)
 
                     $btnSp = New-Object System.Windows.Controls.WrapPanel
                     $btnSp.HorizontalAlignment = "Center"
 
-                    # Helper to cleanly generate the 5 buttons
                     function New-Btn($content, $bg) {
                         $b = New-Object System.Windows.Controls.Button
                         $b.Content = $content; $b.Height = 35; $b.Margin = "5"; $b.Padding = "12,0"
@@ -4367,24 +4366,34 @@ $BtnSettings.Add_Click({
                         return $b
                     }
 
-                    # We change the visible text here, but keep the $script:plResult exact!
-                    $btnYes = New-Btn "Yes (Download this playlist)" "#10B981"
+                    $btnYes = New-Btn "Download Full Playlist" "#10B981"
                     $btnYes.Add_Click({ $script:plResult = "Yes"; $win.Close() })
+                    [void]$btnSp.Children.Add($btnYes)
                     
-                    $btnYesAll = New-Btn "Yes to All (Download all playlists)" "#059669"
-                    $btnYesAll.Add_Click({ $script:plResult = "YesToAll"; $win.Close() })
+                    if ($isBatch) {
+                        $btnYesAll = New-Btn "Yes to All Playlists" "#059669"
+                        $btnYesAll.Add_Click({ $script:plResult = "YesToAll"; $win.Close() })
+                        [void]$btnSp.Children.Add($btnYesAll)
+                    }
+
+                    $btnSelect = New-Btn "Select Specific Videos..." "#3B82F6"
+                    $btnSelect.Add_Click({ $script:plResult = "Select"; $win.Close() })
+                    [void]$btnSp.Children.Add($btnSelect)
                     
-                    $btnNo = New-Btn "No (Don't download this playlist)" "#F59E0B"
+                    $btnNo = New-Btn "Download Single Video Only" "#F59E0B"
                     $btnNo.Add_Click({ $script:plResult = "No"; $win.Close() })
+                    [void]$btnSp.Children.Add($btnNo)
                     
-                    $btnNoAll = New-Btn "No to All (Don't download any playlists)" "#D97706"
-                    $btnNoAll.Add_Click({ $script:plResult = "NoToAll"; $win.Close() })
+                    if ($isBatch) {
+                        $btnNoAll = New-Btn "No to All Playlists" "#D97706"
+                        $btnNoAll.Add_Click({ $script:plResult = "NoToAll"; $win.Close() })
+                        [void]$btnSp.Children.Add($btnNoAll)
+                    }
 
                     $btnCancel = New-Btn "Cancel" "#EF4444"
                     $btnCancel.Add_Click({ $script:plResult = "Cancel"; $win.Close() })
+                    [void]$btnSp.Children.Add($btnCancel)
 
-                    [void]$btnSp.Children.Add($btnYes); [void]$btnSp.Children.Add($btnYesAll)
-                    [void]$btnSp.Children.Add($btnNo); [void]$btnSp.Children.Add($btnNoAll); [void]$btnSp.Children.Add($btnCancel)
                     [void]$sp.Children.Add($btnSp)
                     $win.Content = $sp
 
@@ -4392,66 +4401,185 @@ $BtnSettings.Add_Click({
                     [void]$win.ShowDialog()
                     return $script:plResult
                 }
+
+                function Show-InteractivePlaylistSelection([string]$linkUrl) {
+                    $LogBox.AppendText("[INFO] Fetching playlist metadata. This may take a moment depending on the playlist size...`r`n")
+                    $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
+                    $window.Cursor = [System.Windows.Input.Cursors]::Wait
+
+                    $tempJson = Join-Path $env:TEMP "yt_playlist_$([guid]::NewGuid().ToString().Substring(0,8)).json"
+                    
+                    # Call yt-dlp to get flat playlist json
+                    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+                    $pinfo.FileName = $script:State.ytdlp
+                    $pinfo.Arguments = "--flat-playlist --dump-json `"$linkUrl`""
+                    $pinfo.UseShellExecute = $false; $pinfo.RedirectStandardOutput = $true; $pinfo.CreateNoWindow = $true
+                    $pinfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+                    
+                    $p = [System.Diagnostics.Process]::Start($pinfo)
+                    $jsonOut = $p.StandardOutput.ReadToEnd()
+                    $p.WaitForExit()
+                    $p.Dispose()
+                    $window.Cursor = [System.Windows.Input.Cursors]::Arrow
+
+                    if ([string]::IsNullOrWhiteSpace($jsonOut)) {
+                        [void][System.Windows.MessageBox]::Show("Could not fetch playlist data. It may be private or invalid.", "Error", 0, 16)
+                        return $null
+                    }
+
+                    $videos = @()
+                    foreach ($line in ($jsonOut -split "`n")) {
+                        if (-not [string]::IsNullOrWhiteSpace($line)) {
+                            try {
+                                $v = $line | ConvertFrom-Json
+                                if ($v.id -and $v.title) {
+                                    $vidUrl = if ($v.url) { $v.url } else { "https://www.youtube.com/watch?v=$($v.id)" }
+                                    $videos += [PSCustomObject]@{ Title = $v.title; Url = $vidUrl; Duration = $v.duration }
+                                }
+                            } catch {}
+                        }
+                    }
+
+                    if ($videos.Count -eq 0) {
+                        [void][System.Windows.MessageBox]::Show("No videos found in this playlist.", "Empty Playlist", 0, 48)
+                        return $null
+                    }
+
+                    # Build Selection UI
+                    $win = New-Object System.Windows.Window
+                    $win.Title = "Select Videos from Playlist"
+                    $win.Width = 600; $win.Height = 500
+                    $win.WindowStartupLocation = "CenterScreen"
+                    $win.Background = $window.Resources["BgBrush"]
+                    
+                    $grid = New-Object System.Windows.Controls.Grid
+                    $grid.Margin = 15
+                    $grid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height=[System.Windows.GridLength]::Auto}))
+                    $grid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height=New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)}))
+                    $grid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height=[System.Windows.GridLength]::Auto}))
+
+                    $lbl = New-Object System.Windows.Controls.TextBlock
+                    $lbl.Text = "Found $($videos.Count) videos. Select the ones you want to download:"
+                    $lbl.Foreground = $window.Resources["TextBrush"]; $lbl.FontWeight = "Bold"; $lbl.Margin = "0,0,0,10"
+                    [System.Windows.Controls.Grid]::SetRow($lbl, 0)
+                    [void]$grid.Children.Add($lbl)
+
+                    $listBox = New-Object System.Windows.Controls.ListBox
+                    $listBox.Background = $window.Resources["InputBgBrush"]
+                    $listBox.Foreground = $window.Resources["TextBrush"]
+                    $listBox.SelectionMode = "Multiple"
+                    $listBox.Margin = "0,0,0,15"
+                    foreach ($v in $videos) {
+                        $dur = if ($v.Duration) { [TimeSpan]::FromSeconds($v.Duration).ToString("hh\:mm\:ss") } else { "Unknown" }
+                        $item = New-Object System.Windows.Controls.ListBoxItem
+                        $item.Content = "[$dur] $($v.Title)"
+                        $item.Tag = $v.Url
+                        [void]$listBox.Items.Add($item)
+                    }
+                    [System.Windows.Controls.Grid]::SetRow($listBox, 1)
+                    [void]$grid.Children.Add($listBox)
+
+                    $btnPanel = New-Object System.Windows.Controls.WrapPanel
+                    $btnPanel.HorizontalAlignment = "Right"
+                    [System.Windows.Controls.Grid]::SetRow($btnPanel, 2)
+                    
+                    $btnSelAll = New-Object System.Windows.Controls.Button
+                    $btnSelAll.Content = "Select All"; $btnSelAll.Height = 35; $btnSelAll.Width = 100; $btnSelAll.Margin = "0,0,10,0"
+                    $btnSelAll.Background = "#4B5563"; $btnSelAll.Foreground = "White"; $btnSelAll.BorderThickness = 0; $btnSelAll.Cursor = "Hand"
+                    $btnSelAll.Add_Click({ $listBox.SelectAll() })
+
+                    $btnConfirm = New-Object System.Windows.Controls.Button
+                    $btnConfirm.Content = "Queue Selected"; $btnConfirm.Height = 35; $btnConfirm.Width = 120; $btnConfirm.Margin = "0,0,10,0"
+                    $btnConfirm.Background = "#10B981"; $btnConfirm.Foreground = "White"; $btnConfirm.BorderThickness = 0; $btnConfirm.Cursor = "Hand"
+                    $btnConfirm.Add_Click({ 
+                        $script:selectedUrls = @()
+                        foreach ($sel in $listBox.SelectedItems) { $script:selectedUrls += $sel.Tag }
+                        $win.Close() 
+                    })
+
+                    $btnCancel = New-Object System.Windows.Controls.Button
+                    $btnCancel.Content = "Cancel"; $btnCancel.Height = 35; $btnCancel.Width = 80
+                    $btnCancel.Background = "#EF4444"; $btnCancel.Foreground = "White"; $btnCancel.BorderThickness = 0; $btnCancel.Cursor = "Hand"
+                    $btnCancel.Add_Click({ $script:selectedUrls = $null; $win.Close() })
+
+                    [void]$btnPanel.Children.Add($btnSelAll); [void]$btnPanel.Children.Add($btnConfirm); [void]$btnPanel.Children.Add($btnCancel)
+                    [void]$grid.Children.Add($btnPanel)
+                    $win.Content = $grid
+
+                    $script:selectedUrls = $null
+                    [void]$win.ShowDialog()
+                    return $script:selectedUrls
+                }
                 # -------------------------------------------
 
-                # Iterate through all links and queue them up
+                # Create a flat array of jobs to process so we can expand playlists into individual jobs
+                $finalJobsToQueue = @()
+
                 foreach ($processLink in $linksToProcess) {
                     
-                    # Validate against our pre-scan results to avoid spamming popups!
+                    # Validate against our pre-scan results
                     if ([string]::IsNullOrWhiteSpace($processLink) -or $processLink -notmatch "^(https?://|www\.)") { continue }
                     
                     if ($batchIgnoreUnsupported -eq $false -and -not $validLinks.Contains($processLink)) {
                         $LogBox.AppendText("[SKIP] Ignored unsupported link: $processLink`r`n")
-                        
-                        # Track skipped links for the batch overview
                         if ($null -eq $script:State.YtDlpSkippedLinks) { $script:State.YtDlpSkippedLinks = @() }
                         $script:State.YtDlpSkippedLinks += $processLink
-                        
                         continue 
                     }
 
-                    # Catch playlists gracefully and remember "To All" choices
                     $playlistFlag = "--no-playlist"
+                    $urlsToAdd = @($processLink) # By default, just queue the link itself
+                    $skipThisLink = $false
+
                     if ($processLink -match "list=") {
-                        if ($isBatch) {
-                            if ($script:State.PlaylistChoice -eq "YesToAll") {
-                                $playlistFlag = "--yes-playlist"
-                            }
-                            elseif ($script:State.PlaylistChoice -eq "NoToAll") {
-                                $playlistFlag = "--no-playlist"
-                            }
-                            else {
-                                $ans = Show-PlaylistDialog -linkUrl $processLink
-                                
-                                if ($ans -eq "Cancel") { 
-                                    $script:State.BatchQueue = @() # Wipes the queue instantly
-                                    $LogBox.AppendText("`r`n[CANCEL] Batch queue setup aborted by user.`r`n")
-                                    return # Stops processing the rest of the text file immediately
-                                }
-                                elseif ($ans -eq "YesToAll") {
-                                    $script:State.PlaylistChoice = "YesToAll"
-                                    $playlistFlag = "--yes-playlist"
-                                }
-                                elseif ($ans -eq "NoToAll") {
-                                    $script:State.PlaylistChoice = "NoToAll"
-                                    $playlistFlag = "--no-playlist"
-                                }
-                                elseif ($ans -eq "Yes") {
-                                    $playlistFlag = "--yes-playlist"
-                                }
-                            }
+                        if ($script:State.PlaylistChoice -eq "YesToAll") {
+                            $playlistFlag = "--yes-playlist"
+                        }
+                        elseif ($script:State.PlaylistChoice -eq "NoToAll") {
+                            $playlistFlag = "--no-playlist"
                         }
                         else {
-                            $ans = [System.Windows.MessageBox]::Show("A Playlist was detected in the following link:`n`n$processLink`n`nDo you want to download the FULL playlist?`n(Selecting 'No' will download just the single video)", "Playlist Detected", "YesNoCancel", "Question")
+                            $ans = Show-PlaylistDialog -linkUrl $processLink -isBatch $isBatch
                             
                             if ($ans -eq "Cancel") { 
-                                $LogBox.AppendText("`r`n[CANCEL] Download setup aborted by user.`r`n")
+                                $script:State.BatchQueue = @() 
+                                $LogBox.AppendText("`r`n[CANCEL] Queue setup aborted by user.`r`n")
                                 return 
                             }
-                            
-                            $playlistFlag = if ($ans -eq "Yes") { "--yes-playlist" } else { "--no-playlist" }
+                            elseif ($ans -eq "YesToAll") {
+                                $script:State.PlaylistChoice = "YesToAll"
+                                $playlistFlag = "--yes-playlist"
+                            }
+                            elseif ($ans -eq "NoToAll") {
+                                $script:State.PlaylistChoice = "NoToAll"
+                                $playlistFlag = "--no-playlist"
+                            }
+                            elseif ($ans -eq "Yes") {
+                                $playlistFlag = "--yes-playlist"
+                            }
+                            elseif ($ans -eq "Select") {
+                                $selected = Show-InteractivePlaylistSelection -linkUrl $processLink
+                                if ($null -eq $selected -or $selected.Count -eq 0) {
+                                    $skipThisLink = $true # User cancelled selection or selected nothing
+                                } else {
+                                    $urlsToAdd = $selected
+                                    $playlistFlag = "--no-playlist" # Force no-playlist for the specific extracted video URLs
+                                }
+                            }
                         }
                     }
+
+                    if ($skipThisLink) { continue }
+
+                    foreach ($finalUrl in $urlsToAdd) {
+                        $finalJobsToQueue += @{ Url = $finalUrl; Flag = $playlistFlag }
+                    }
+                }
+
+                # Now loop through the flattened list of final jobs and queue them into $script:State.BatchQueue
+                foreach ($fJob in $finalJobsToQueue) {
+                    $processLink = $fJob.Url
+                    $playlistFlag = $fJob.Flag
 
                     $jobStart = Get-Date
                     $existing = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
