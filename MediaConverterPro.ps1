@@ -1725,13 +1725,11 @@ try {
                             }
                             catch {
                                 Write-CrashLog "Failed to parse/resume Queue. Corrupted JSON file? Error: $($_.Exception.Message)"
-                                [System.GC]::Collect()
-                                Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue
+                                Remove-Item -LiteralPath $QueueFile -Force -ErrorAction SilentlyContinue
                             }
                         }
                         else {
-                            [System.GC]::Collect()
-                            Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue
+                            Remove-Item -LiteralPath $QueueFile -Force -ErrorAction SilentlyContinue
                         }
                     }
         
