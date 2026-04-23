@@ -120,8 +120,8 @@ function Write-ConvertLog {
     for ($i = 0; $i -lt 3; $i++) { try { [System.IO.File]::AppendAllText($ConvertLog, $entry); break } catch { Start-Sleep -Milliseconds 50 } }
 }
 
-# Initialize a global set to prevent queue overwrite race conditions
-$script:ReservedFilenames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+# Initialize a thread-safe dictionary to prevent queue overwrite race conditions during parallel tasks
+$script:ReservedFilenames = [System.Collections.Concurrent.ConcurrentDictionary[string, byte]]::new([StringComparer]::OrdinalIgnoreCase)
 
 # Function to generate a unique filename to prevent overwriting existing files
 function Get-UniqueFileName ([string]$FilePath) {
@@ -131,11 +131,11 @@ function Get-UniqueFileName ([string]$FilePath) {
     $newPath = $FilePath
     $counter = 1
     
-    while ((Test-Path -LiteralPath $newPath) -or $script:ReservedFilenames.Contains($newPath)) {
+    while ((Test-Path -LiteralPath $newPath) -or $script:ReservedFilenames.ContainsKey($newPath)) {
         $newPath = Join-Path $dir "$name ($counter)$ext"
         $counter++
     }
-    [void]$script:ReservedFilenames.Add($newPath)
+    [void]$script:ReservedFilenames.TryAdd($newPath, 0)
     return $newPath
 }
 
