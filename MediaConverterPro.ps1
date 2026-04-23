@@ -5155,21 +5155,11 @@ $BtnSettings.Add_Click({
                     [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ ProcessNextJob })
                 }
 
-                # Run file cleanup asynchronously using pure .NET to ensure Runspace thread safety
+                # Run file cleanup asynchronously via hidden cmd to prevent Runspace context loss
                 if ($currentJob -and $currentJob.IsYtDlp -and (Test-Path -LiteralPath $currentJob.OutputDir)) {
                     $outDir = $currentJob.OutputDir
-                    $jStart = $currentJob.JobStart
-                    [void][System.Threading.Tasks.Task]::Run([Action] {
-                            Start-Sleep -Seconds 1 # Give yt-dlp a second to let go of the file lock
-                            try {
-                                $dirInfo = New-Object System.IO.DirectoryInfo($outDir)
-                                foreach ($file in $dirInfo.EnumerateFiles()) {
-                                    if (($file.Extension -match "\.part$|\.ytdl$|\.temp$|\.jpg$|\.webp$") -and ($file.LastWriteTime -ge $jStart)) {
-                                        [System.IO.File]::Delete($file.FullName)
-                                    }
-                                }
-                            } catch {}
-                        })
+                    $cmdArgs = "/c timeout /t 2 /nobreak >nul & del /q /f `"$outDir\*.part`" `"$outDir\*.ytdl`" `"$outDir\*.temp`""
+                    [void](Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden)
                 }
 
                 if (Test-Path $QueueFile) { Remove-Item $QueueFile -Force -ErrorAction SilentlyContinue }
