@@ -3291,12 +3291,13 @@ $BtnSettings.Add_Click({
             $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$FilePath`""
             $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
             $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-            
-            $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
-            [void]$pDur.StandardError.ReadToEnd()
-            
-            if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
-            $pDur.Dispose() # REQUIRED to prevent Windows handle leaks
+            if ($null -ne $pDur) {
+                $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
+                [void]$pDur.StandardError.ReadToEnd()
+                
+                if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
+                $pDur.Dispose()
+            }
             
             $totalSecs = 0
             if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs)) {
