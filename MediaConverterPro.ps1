@@ -128,7 +128,7 @@ function Get-UniqueFileName ([string]$FilePath) {
 # ==============================================================================
 try {
     # Set console encoding to UTF8 to handle special characters in paths/logs
-    try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+    try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { Write-Warning "Failed to set UTF8 console encoding: $_" }
     $ErrorActionPreference = "Continue" 
     
     # Load required .NET assemblies for WPF and Windows Forms
