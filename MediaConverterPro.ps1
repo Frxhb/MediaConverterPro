@@ -4134,12 +4134,13 @@ $BtnSettings.Add_Click({
                 [void][System.Threading.Tasks.Task]::Run([Action] {
                         try {
                             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-                            $wc = New-Object System.Net.WebClient
                             $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
-                            $script:State.SupportedSitesCache = $wc.DownloadString($rawUrl)
-                            $wc.Dispose()
+                            $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing
                         }
-                        catch { $script:State.SupportedSitesCache = "fallback_offline" }
+                        catch { 
+                            $script:State.SupportedSitesCache = "fallback_offline"
+                            Write-CrashLog "Failed to download supported sites: $($_.Exception.Message)"
+                        }
                     })
             }
             $tabIndex = $MainTabs.SelectedIndex
