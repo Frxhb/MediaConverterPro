@@ -56,13 +56,16 @@ $shortPathCode = @'
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
-public class PathHelper {
-    [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
-    public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
+
+namespace WinApi {
+    public class PathHelper {
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+        public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
+    }
 }
 '@
 if (-not ("WinApi.PathHelper" -as [type])) {
-    Add-Type -TypeDefinition $shortPathCode -Namespace WinApi
+    Add-Type -TypeDefinition $shortPathCode
 }
 
 # Save the WinAPI variables to the script scope so we can apply them safely after the WPF Window renders
@@ -3374,41 +3377,6 @@ $BtnSettings.Add_Click({
         })
     # --- END STRICT TRIM UI LOGIC ---
 
-    # Interactive Video Trimmer Slider Logic
-    $V_SliderTrimStart.Add_ValueChanged({
-            $ts = [TimeSpan]::FromSeconds($V_SliderTrimEnd.Value)
-            $V_TrimEnd.Text = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
-            if ($V_SliderTrimEnd.Value -lt $V_SliderTrimStart.Value) { $V_SliderTrimStart.Value = $V_SliderTrimEnd.Value }
-            Update-AllPreviews
-        })
-
-    # Update Sliders when a new video is selected
-    $V_InList.add_SelectionChanged([System.Windows.Controls.SelectionChangedEventHandler] { 
-            if ($null -ne $V_InList.SelectedItem -and $script:State.ffprobeFound) {
-                $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
-                $pinfoDur.FileName = $script:State.ffprobe
-                $pinfoDur.Arguments = "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 `"$($V_InList.SelectedItem)`""
-                $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
-                $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-                
-                $durStr = $pDur.StandardOutput.ReadToEnd().Trim()
-                [void]$pDur.StandardError.ReadToEnd()
-                
-                if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
-                $pDur.Dispose()
-            
-                $totalSecs = 0
-                if ([double]::TryParse($durStr, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$totalSecs) -and $totalSecs -gt 0) {
-                    $V_SliderTrimStart.IsEnabled = $true; $V_SliderTrimEnd.IsEnabled = $true
-                    $V_SliderTrimStart.Maximum = $totalSecs; $V_SliderTrimEnd.Maximum = $totalSecs
-                    $V_SliderTrimStart.Value = 0; $V_SliderTrimEnd.Value = $totalSecs
-                }
-            }
-            else {
-                $V_SliderTrimStart.IsEnabled = $false; $V_SliderTrimEnd.IsEnabled = $false
-            }
-            Update-FfmpegPreview 
-        })    
     $Y_Link.Add_GotKeyboardFocus({ if ($Y_Link.Text -eq "https://") { $Y_Link.Text = "" } })
     $Y_Link.Add_LostKeyboardFocus({ if ([string]::IsNullOrWhiteSpace($Y_Link.Text)) { $Y_Link.Text = "https://" } })
 
@@ -3456,10 +3424,8 @@ $BtnSettings.Add_Click({
                 if ($null -eq $script:State.SupportedSitesCache -or $script:State.SupportedSitesCache.Length -eq 0) {
                     try {
                         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-                        $wc = New-Object System.Net.WebClient
                         $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
-                        $script:State.SupportedSitesCache = $wc.DownloadString($rawUrl)
-                        $wc.Dispose()
+                        $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing
                     }
                     catch { $script:State.SupportedSitesCache = "fallback_offline" }
                 }
@@ -4301,10 +4267,8 @@ $BtnSettings.Add_Click({
                 if ($null -eq $script:State.SupportedSitesCache -or $script:State.SupportedSitesCache.Length -eq 0) {
                     try {
                         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-                        $wc = New-Object System.Net.WebClient
                         $rawUrl = "https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/supportedsites.md"
-                        $script:State.SupportedSitesCache = $wc.DownloadString($rawUrl)
-                        $wc.Dispose()
+                        $script:State.SupportedSitesCache = Invoke-RestMethod -Uri $rawUrl -UseBasicParsing
                     }
                     catch { $script:State.SupportedSitesCache = "fallback_offline" }
                 }
@@ -5135,9 +5099,6 @@ $BtnSettings.Add_Click({
             if ($null -ne $V_CAudioTracks) { $V_CAudioTracks.SelectedIndex = 1 } # Tracks: Keep All
             # -------------------------------------------------------
             
-            if ($null -ne $V_CFormat) { $V_CFormat.SelectedIndex = 1 }
-            if ($null -ne $V_CCodec) { $V_CCodec.SelectedIndex = 0 }
-            if ($null -ne $V_CSub) { $V_CSub.SelectedIndex = 0 }
             if ($null -ne $V_CRes) { $V_CRes.SelectedIndex = 0 }
             if ($null -ne $V_Preset) { $V_Preset.SelectedIndex = 0 }
             if ($null -ne $V_CFPS) { $V_CFPS.SelectedIndex = 0 }
