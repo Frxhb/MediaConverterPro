@@ -348,7 +348,9 @@ try {
                 if ($newJson -ne $oldJson) {
                     Set-Content $ConfigFile -Value $newJson -Encoding UTF8 -Force 
                 }
-            } catch {}
+            } catch {
+                Write-CrashLog "Failed to save configuration cache: $($_.Exception.Message)"
+            }
         }
         # ------------------------------
     }
