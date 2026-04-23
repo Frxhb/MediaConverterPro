@@ -106,9 +106,13 @@ function Write-CrashLog {
     for ($i = 0; $i -lt 3; $i++) { 
         try { 
             $fs = [System.IO.File]::Open($CrashLog, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes($entry)
-            $fs.Write($bytes, 0, $bytes.Length)
-            $fs.Close()
+            try {
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes($entry)
+                $fs.Write($bytes, 0, $bytes.Length)
+            }
+            finally {
+                if ($null -ne $fs) { $fs.Dispose() }
+            }
             break 
         } 
         catch { if ($i -eq 2) { Write-Warning "CrashLog Write Failed: $_" }; Start-Sleep -Milliseconds 50 } 
