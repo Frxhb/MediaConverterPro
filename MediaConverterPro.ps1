@@ -2593,6 +2593,7 @@ try {
 
                     $StatusText.Text = "Updates completed!"
                     $PBar.Value = 100
+                    $TaskbarProgress.ProgressValue = 0.0
                     $TaskbarProgress.ProgressState = "None"
                     Write-UpdLog "[UPDATE] Dependency update process finished."
                     
@@ -2836,7 +2837,8 @@ $BtnSettings.Add_Click({
             $pStr = [string]$p
             if ([System.IO.Directory]::Exists($pStr)) { 
                 try {
-                    $files = [System.IO.Directory]::GetFiles($pStr, "*.*", [System.IO.SearchOption]::TopDirectoryOnly)
+                    # Optimized to EnumerateFiles for immediate yield and lower memory pressure
+                    $files = [System.IO.Directory]::EnumerateFiles($pStr, "*.*", [System.IO.SearchOption]::TopDirectoryOnly)
                     foreach ($f in $files) {
                         if ($f -match "(?i)$ExtRegex" -and $existingItems.Add($f)) { 
                             [void]$List.Items.Add($f)
