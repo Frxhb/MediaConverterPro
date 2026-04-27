@@ -160,6 +160,18 @@ try {
     $script:TrayIcon.Visible = $true
     $script:TrayIcon.Text = "Media Converter Pro"
 
+    # Add Context Menu to Tray Icon for actual exit
+    $trayMenu = New-Object System.Windows.Forms.ContextMenu
+    $trayExitItem = New-Object System.Windows.Forms.MenuItem
+    $trayExitItem.Text = "Exit Media Converter Pro"
+    $trayExitItem.add_Click({
+        $script:ForceClose = $true
+        $window.Close()
+    })
+    [void]$trayMenu.MenuItems.Add($trayExitItem)
+    $script:TrayIcon.ContextMenu = $trayMenu
+    $script:ForceClose = $false
+
     # Setup Native Windows 10/11 Toast Notifications with fallback
     function Show-Toast {
         param([string]$Title, [string]$Message)
@@ -2280,16 +2292,10 @@ try {
 
     # Restore from tray on double click
     $script:TrayIcon.add_DoubleClick({
+        $window.Show()
         $window.ShowInTaskbar = $true
         $window.WindowState = [System.Windows.WindowState]::Normal
         $window.Activate()
-    })
-
-    # Map the window minimize button to hide the app into the tray
-    $window.Add_StateChanged({
-        if ($window.WindowState -eq [System.Windows.WindowState]::Minimized) {
-            $window.ShowInTaskbar = $false
-        }
     })
 
     # Update previews when user selections change
@@ -5392,6 +5398,18 @@ $BtnSettings.Add_Click({
 
     # Ensure application cleanly terminates child processes, saves queue, and wipes temp files
     $window.Add_Closing({ 
+            param($sender, $e)
+
+            # If ForceClose is false, user clicked X. Hide to tray instead!
+            if (-not $script:ForceClose) {
+                $e.Cancel = $true
+                $window.Hide()
+                $window.ShowInTaskbar = $false
+                Show-Toast -Title "Minimized to Tray" -Message "Media Converter Pro is still running in the background."
+                return
+            }
+
+            # Actual shutdown logic triggered by the Right-Click -> Exit tray menu
             Stop-ProcessTree $script:State.p
             Save-Queue 
         
