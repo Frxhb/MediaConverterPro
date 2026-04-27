@@ -1635,11 +1635,11 @@ try {
         
                     MissingToolsCheck 
 
-                    # Dynamic Hardware Acceleration Detection
+                    # Dynamic Hardware Acceleration Detection (Fixed API vs Encoder detection)
                     if ($script:State.ffmpegFound) {
                         try {
-                            $hwOut = & $script:State.ffmpeg -hwaccels 2>&1 | Out-String
-                            if ($hwOut -notmatch "cuda|nvenc") { 
+                            $hwOut = & $script:State.ffmpeg -encoders 2>&1 | Out-String
+                            if ($hwOut -notmatch "nvenc") { 
                                 ($V_CHWAccel.Items[1] -as [System.Windows.Controls.ComboBoxItem]).IsEnabled = $false
                                 ($V_CHWAccel.Items[1] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = "NVIDIA GPU support not detected."
                             }
@@ -2922,6 +2922,20 @@ $BtnSettings.Add_Click({
 
     # Helper function to easily bind right-click Context Menus to ListBoxes
     function Add-ContextMenu($ListBox, $BtnRemove, $BtnClear) {
+        # Dynamically inject an "Open File Location" button into the context menu
+        $ctxMenu = $ListBox.ContextMenu
+        $BtnOpenLoc = New-Object System.Windows.Controls.MenuItem
+        $BtnOpenLoc.Header = "Open File Location"
+        $ctxMenu.Items.Insert(0, $BtnOpenLoc)
+        $ctxMenu.Items.Insert(1, (New-Object System.Windows.Controls.Separator))
+
+        $BtnOpenLoc.Add_Click({
+            if ($ListBox.SelectedItem -and (Test-Path -LiteralPath $ListBox.SelectedItem)) {
+                $dir = Split-Path $ListBox.SelectedItem -Parent
+                [void](Start-Process "explorer.exe" -ArgumentList "`"$dir`"")
+            }
+        })
+
         $BtnRemove.Add_Click({
                 $selected = @($ListBox.SelectedItems)
                 # Clear UI selection first to prevent multi-select redraw lag
@@ -3758,9 +3772,11 @@ $BtnSettings.Add_Click({
                         $LogBox.AppendText($newText)
                         
                         # Prevent memory leaks and UI freezing during massive FFmpeg/yt-dlp logs
-                        # Keep the buffer strictly smaller to prevent massive WPF layout recalculations
-                        if ($LogBox.Text.Length -gt 15000) {
+                        # Using BeginChange/EndChange prevents visual stuttering during text manipulations
+                        if ($LogBox.Text.Length -gt 20000) {
+                            $LogBox.BeginChange()
                             $LogBox.Text = $LogBox.Text.Substring($LogBox.Text.Length - 10000)
+                            $LogBox.EndChange()
                         }
 
                         if ($CbAutoScrollLog.IsChecked) {
@@ -5259,6 +5275,8 @@ $BtnSettings.Add_Click({
 
     # Terminates queue safely and clears uncompleted outputs to avoid data leaks
     $BtnCancel.Add_Click({
+            if ([System.Windows.MessageBox]::Show("Are you sure you want to cancel all active and pending jobs?", "Confirm Cancel", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Warning) -ne [System.Windows.MessageBoxResult]::Yes) { return }
+            
             try {
                 $BtnCancel.IsEnabled = $false
                 $BtnSkip.IsEnabled = $false
@@ -5331,6 +5349,10 @@ $BtnSettings.Add_Click({
     [void]$window.ShowDialog()
 }
 catch {
+    if ($script:TrayIcon) { 
+        $script:TrayIcon.Visible = $false
+        $script:TrayIcon.Dispose() 
+    }
     Write-CrashLog "Fatal Application Crash: $($_.Exception.Message)`r`n$($_.ScriptStackTrace)"
     [void][System.Windows.MessageBox]::Show("Crash! See crash.log", "Error", 0, 16)
 }
