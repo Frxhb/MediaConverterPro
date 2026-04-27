@@ -11,7 +11,6 @@
 # ==============================================================================
 
 # Combined C# Code for Window Hiding, UIPI Drag & Drop Bypass, and ShortPath resolution.
-# Consolidating this into a single Add-Type call prevents the csc.exe compiler from launching 3 times, saving ~3 seconds on startup.
 $csharpCode = @'
 using System;
 using System.Runtime.InteropServices;
@@ -42,11 +41,18 @@ namespace WinApi {
     }
 }
 '@
-if (-not ("WinApi.ConsoleHelper" -as [type])) {
-    Add-Type -TypeDefinition $csharpCode
+
+try {
+    if (-not ("WinApi.WinApiDragDrop" -as [type])) {
+        Add-Type -TypeDefinition $csharpCode -ErrorAction Stop
+    }
+    [WinApi.ConsoleHelper]::HideConsole()
+    $winApi = [WinApi.WinApiDragDrop]
+} 
+catch {
+    # If the types are already loaded from a previous run in this session, safely suppress the error and bind them.
+    $winApi = [WinApi.WinApiDragDrop]
 }
-[WinApi.ConsoleHelper]::HideConsole()
-$winApi = [WinApi.WinApiDragDrop]
 
 $WM_DROPFILES = 0x233
 $WM_COPYDATA = 0x004A
