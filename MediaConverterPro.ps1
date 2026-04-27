@@ -10,63 +10,48 @@
 # 1. APPLICATION INITIALIZATION & WINDOWS API SETUP
 # ==============================================================================
 
-# C# Code to import kernel32 and user32 functions. 
-# This hides the background PowerShell console window securely.
-$hideConsoleCode = @'
-using System;
-using System.Runtime.InteropServices;
-public class ConsoleHelper {
-    [DllImport("kernel32.dll")]
-    public static extern IntPtr GetConsoleWindow();
-    
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    
-    public static void HideConsole() {
-        IntPtr hWnd = GetConsoleWindow();
-        if (hWnd != IntPtr.Zero) {
-            ShowWindow(hWnd, 0); // 0 = SW_HIDE
-        }
-    }
-}
-'@
-if (-not ("ConsoleHelper" -as [type])) {
-    Add-Type -TypeDefinition $hideConsoleCode
-}
-[ConsoleHelper]::HideConsole()
-
-# C# Code to bypass User Interface Privilege Isolation (UIPI) if running as Admin.
-# This ensures Drag & Drop functionality works even if the script is elevated.
-$code = @'
-[DllImport("user32.dll")]
-public static extern bool ChangeWindowMessageFilterEx(IntPtr hWnd, uint msg, uint action, IntPtr pAttributes);
-'@
-if (-not ("WinApi.WinApiDragDrop" -as [type])) {
-    $winApi = Add-Type -MemberDefinition $code -Name "WinApiDragDrop" -Namespace WinApi -PassThru
-}
-else {
-    $winApi = [WinApi.WinApiDragDrop]
-}
-$WM_DROPFILES = 0x233
-$WM_COPYDATA = 0x004A
-$WM_COPYGLOBALDATA = 0x0049
-$MSGFLT_ALLOW = 1
-
-$shortPathCode = @'
+# Combined C# Code for Window Hiding, UIPI Drag & Drop Bypass, and ShortPath resolution.
+# Consolidating this into a single Add-Type call prevents the csc.exe compiler from launching 3 times, saving ~3 seconds on startup.
+$csharpCode = @'
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace WinApi {
+    public class ConsoleHelper {
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr GetConsoleWindow();
+        
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        
+        public static void HideConsole() {
+            IntPtr hWnd = GetConsoleWindow();
+            if (hWnd != IntPtr.Zero) { ShowWindow(hWnd, 0); }
+        }
+    }
+
+    public class WinApiDragDrop {
+        [DllImport("user32.dll")]
+        public static extern bool ChangeWindowMessageFilterEx(IntPtr hWnd, uint msg, uint action, IntPtr pAttributes);
+    }
+
     public class PathHelper {
         [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
         public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
     }
 }
 '@
-if (-not ("WinApi.PathHelper" -as [type])) {
-    Add-Type -TypeDefinition $shortPathCode
+if (-not ("WinApi.ConsoleHelper" -as [type])) {
+    Add-Type -TypeDefinition $csharpCode
 }
+[WinApi.ConsoleHelper]::HideConsole()
+$winApi = [WinApi.WinApiDragDrop]
+
+$WM_DROPFILES = 0x233
+$WM_COPYDATA = 0x004A
+$WM_COPYGLOBALDATA = 0x0049
+$MSGFLT_ALLOW = 1
 
 # Save the WinAPI variables to the script scope so we can apply them safely after the WPF Window renders
 $script:winApi = $winApi
@@ -411,9 +396,6 @@ try {
         # ------------------------------
     }
     
-    # Run the tool finder
-    Find-Tools
-
     # ==============================================================================
     # 3. CONFIGURATION MANAGEMENT
     # ==============================================================================
