@@ -5397,7 +5397,7 @@ $BtnSettings.Add_Click({
 
     # Ensure application cleanly terminates child processes, saves queue, and wipes temp files
     $window.Add_Closing({ 
-            param($sender, $e)
+            param($sender_window, $e)
 
             # If ForceClose is false, user clicked X. Hide to tray instead!
             if (-not $script:ForceClose) {
