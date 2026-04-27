@@ -4040,8 +4040,8 @@ $BtnSettings.Add_Click({
                                     $dlQual = "Audio Only"
 
                                     # --- ADDED: Save title to memory for the batch overview ---
-                                    if ($null -eq $script:State.YtDlpDownloadedTitles) { $script:State.YtDlpDownloadedTitles = @() }
-                                    $script:State.YtDlpDownloadedTitles += $dlTitle
+                                    if ($null -eq $script:State.YtDlpDownloadedTitles) { $script:State.YtDlpDownloadedTitles = [System.Collections.Generic.List[string]]::new() }
+                                    $script:State.YtDlpDownloadedTitles.Add($dlTitle)
                                     # ----------------------------------------------------------
 
                                     # Only run FFprobe if it actually exists on the system
@@ -4165,8 +4165,8 @@ $BtnSettings.Add_Click({
     
             $script:State.BatchQueue = [System.Collections.Generic.List[hashtable]]::new()
             $script:State.CurrentJobIndex = 0
-            $script:State.YtDlpDownloadedTitles = @() 
-            $script:State.YtDlpSkippedLinks = @() # ADDED: Track skipped links
+            $script:State.YtDlpDownloadedTitles = [System.Collections.Generic.List[string]]::new()
+            $script:State.YtDlpSkippedLinks = [System.Collections.Generic.List[string]]::new() # ADDED: Track skipped links
             $LogBox.Clear()
 
             $customParamText = ""
@@ -4218,7 +4218,7 @@ $BtnSettings.Add_Click({
                 $targetFile = Get-UniqueFileName $baseTargetFile
         
                 $argArray = @("-hide_banner", "-y", "-i", $M_InVideo.Text, "-i", $M_InAudio.Text, "-c", "copy", "-map", "0:v:0", "-map", "1:a:0", "-shortest", $targetFile)
-                $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $targetFile; ListBox = $null; ListItem = $null })
+                $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; IsWhisper = $false; CustomTool = ""; OutputDir = $outDir; InputFile = $M_InVideo.Text; OutputFile = $targetFile; ListBox = $null; ListItem = $null })
             }
             # Direct parsing block for Tab: Download
             elseif ($tabIndex -eq 4) {
@@ -4456,14 +4456,14 @@ $BtnSettings.Add_Click({
                         return $null
                     }
 
-                    $videos = @()
+                    $videos = [System.Collections.Generic.List[PSCustomObject]]::new()
                     foreach ($line in ($jsonOut -split "`n")) {
                         if (-not [string]::IsNullOrWhiteSpace($line)) {
                             try {
                                 $v = $line | ConvertFrom-Json
                                 if ($v.id -and $v.title) {
                                     $vidUrl = if ($v.url) { $v.url } else { "https://www.youtube.com/watch?v=$($v.id)" }
-                                    $videos += [PSCustomObject]@{ Title = $v.title; Url = $vidUrl; Duration = $v.duration }
+                                    $videos.Add([PSCustomObject]@{ Title = $v.title; Url = $vidUrl; Duration = $v.duration })
                                 }
                             } catch {}
                         }
@@ -4521,8 +4521,8 @@ $BtnSettings.Add_Click({
                     $btnConfirm.Content = "Queue Selected"; $btnConfirm.Height = 35; $btnConfirm.Width = 120; $btnConfirm.Margin = "0,0,10,0"
                     $btnConfirm.Background = "#10B981"; $btnConfirm.Foreground = "White"; $btnConfirm.BorderThickness = 0; $btnConfirm.Cursor = "Hand"
                     $btnConfirm.Add_Click({ 
-                        $script:selectedUrls = @()
-                        foreach ($sel in $listBox.SelectedItems) { $script:selectedUrls += $sel.Tag }
+                        $script:selectedUrls = [System.Collections.Generic.List[string]]::new()
+                        foreach ($sel in $listBox.SelectedItems) { $script:selectedUrls.Add($sel.Tag) }
                         $win.Close() 
                     })
 
@@ -4542,7 +4542,7 @@ $BtnSettings.Add_Click({
                 # -------------------------------------------
 
                 # Create a flat array of jobs to process so we can expand playlists into individual jobs
-                $finalJobsToQueue = @()
+                $finalJobsToQueue = [System.Collections.Generic.List[hashtable]]::new()
 
                 foreach ($processLink in $linksToProcess) {
                     
@@ -4551,8 +4551,8 @@ $BtnSettings.Add_Click({
                     
                     if ($batchIgnoreUnsupported -eq $false -and -not $validLinks.Contains($processLink)) {
                         $LogBox.AppendText("[SKIP] Ignored unsupported link: $processLink`r`n")
-                        if ($null -eq $script:State.YtDlpSkippedLinks) { $script:State.YtDlpSkippedLinks = @() }
-                        $script:State.YtDlpSkippedLinks += $processLink
+                        if ($null -eq $script:State.YtDlpSkippedLinks) { $script:State.YtDlpSkippedLinks = [System.Collections.Generic.List[string]]::new() }
+                        $script:State.YtDlpSkippedLinks.Add($processLink)
                         continue 
                     }
 
@@ -4601,7 +4601,7 @@ $BtnSettings.Add_Click({
                     if ($skipThisLink) { continue }
 
                     foreach ($finalUrl in $urlsToAdd) {
-                        $finalJobsToQueue += @{ Url = $finalUrl; Flag = $playlistFlag }
+                        $finalJobsToQueue.Add(@{ Url = $finalUrl; Flag = $playlistFlag })
                     }
                 }
 
@@ -4868,7 +4868,7 @@ $BtnSettings.Add_Click({
                     else {
                         $argArray = @("-hide_banner", "-y", "-i", $S_VisAudio.Text, "-filter_complex", "[0:a]$filter[v]", "-map", "[v]", "-map", "0:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", $outFile)
                     }
-                    $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $null; ListItem = $null })
+                    $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; IsWhisper = $false; CustomTool = ""; OutputDir = $outDir; InputFile = $S_VisAudio.Text; OutputFile = $outFile; ListBox = $null; ListItem = $null })
                 }
                 # Video Stabilizer Sub-Tab
                 elseif ($subIdx -eq 3) {
@@ -5101,7 +5101,7 @@ $BtnSettings.Add_Click({
                         $argsFull = (Get-AudioFfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
                         $hasCustom = [bool]($A_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($A_CustomParams.Text))
                         
-                        $script:State.BatchQueue.Add(@{ Args = $argsFull; SafeArgs = $argsSafe; HasCustomParams = $hasCustom; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile })
+                        $script:State.BatchQueue.Add(@{ Args = $argsFull; SafeArgs = $argsSafe; HasCustomParams = $hasCustom; Retried = $false; IsYtDlp = $false; IsWhisper = $false; CustomTool = ""; OutputDir = $outDir; InputFile = $inFile; OutputFile = $outFile; ListBox = $list; ListItem = $inFile })
                     }
                     elseif ($tabIndex -eq 1) { 
                         $fmtRaw = Get-CbVal $V_CFormat
@@ -5132,7 +5132,9 @@ $BtnSettings.Add_Click({
                             HasCustomParams = $hasCustom
                             Retried         = $false
                             IsYtDlp         = $false
+                            IsWhisper       = $false
                             CustomTool      = $targetTool
+                            OutputDir       = $outDir
                             OutputFile      = $outFile
                             ListBox         = $list
                             ListItem        = $inFile
@@ -5174,7 +5176,7 @@ $BtnSettings.Add_Click({
                         }
 
                         $argArray += $outFile
-                        $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile })
+                        $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; IsWhisper = $false; CustomTool = ""; OutputDir = $outDir; InputFile = $inFile; OutputFile = $outFile; ListBox = $list; ListItem = $inFile })
                     }
                 }
             }
