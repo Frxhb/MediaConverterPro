@@ -48,10 +48,11 @@ Write-Host "Compiling... please wait." -ForegroundColor Yellow
 # Convert PS1 to EXE using portable parameters
 # -noConsole: Hides the background CMD window when the EXE starts
 # -sta: Required for WPF/GUI applications
+# -x64: Speeds up the launch time by targeting 64-bit architecture (optional, but recommended for modern systems)
 if (Test-Path $icon_path) {
-    Invoke-Ps2Exe -inputFile $script_path -outputFile $output_path -sta -icon $icon_path | Out-Null
+    Invoke-Ps2Exe -inputFile $script_path -outputFile $output_path -sta -x64 -icon $icon_path | Out-Null
 } else {
-    Invoke-Ps2Exe -inputFile $script_path -outputFile $output_path -sta | Out-Null
+    Invoke-Ps2Exe -inputFile $script_path -outputFile $output_path -sta -x64 | Out-Null
 }
 
 #if you dont want ico: Invoke-Ps2Exe -inputFile $script_path -outputFile $output_path -sta | Out-Null 
