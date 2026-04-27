@@ -3226,6 +3226,8 @@ $BtnSettings.Add_Click({
                 $infoText = "Error: Tool timed out while reading file metadata."
             }
             else {
+                # Ensure the async buffer read tasks fully complete before pulling .Result
+                [System.Threading.Tasks.Task]::WaitAll($stdOutTask, $stdErrTask)
                 $infoText = if ($script:State.ffprobeFound) { $stdOutTask.Result } else { $stdErrTask.Result }
             }
             $p.Dispose() # Free up system memory
