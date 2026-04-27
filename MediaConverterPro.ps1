@@ -2292,7 +2292,6 @@ try {
 
     # Restore from tray on double click
     $script:TrayIcon.add_DoubleClick({
-        $window.Show()
         $window.ShowInTaskbar = $true
         $window.WindowState = [System.Windows.WindowState]::Normal
         $window.Activate()
@@ -5403,7 +5402,7 @@ $BtnSettings.Add_Click({
             # If ForceClose is false, user clicked X. Hide to tray instead!
             if (-not $script:ForceClose) {
                 $e.Cancel = $true
-                $window.Hide()
+                $window.WindowState = [System.Windows.WindowState]::Minimized
                 $window.ShowInTaskbar = $false
                 Show-Toast -Title "Minimized to Tray" -Message "Media Converter Pro is still running in the background."
                 return
