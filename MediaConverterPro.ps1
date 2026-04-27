@@ -3588,11 +3588,12 @@ $BtnSettings.Add_Click({
     function Stop-ProcessTree($proc) {
         try {
             if ($null -ne $proc -and -not $proc.HasExited) {
+                $pidToKill = $proc.Id
                 # Removed -Wait to prevent the WPF UI thread from freezing during termination
-                [void](Start-Process "taskkill.exe" -ArgumentList "/PID $($proc.Id) /T /F" -WindowStyle Hidden)
+                [void](Start-Process "taskkill.exe" -ArgumentList "/PID $pidToKill /T /F" -WindowStyle Hidden)
             }
         } 
-        catch { try { $proc.Kill() } catch {} }
+        catch { try { if ($null -ne $proc) { $proc.Kill() } } catch {} }
     }
     
     # Core loop logic for parsing the global task queue
