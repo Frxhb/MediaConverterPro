@@ -640,6 +640,7 @@ try {
                 <TextBlock x:Name="TxtSubtitle" Text="Open Source Media Editor, Converter and Downloader" Foreground="{DynamicResource MutedBrush}" FontSize="14" Margin="0,2,0,0"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                <Button x:Name="BtnLogs" Content="Logs" Width="70" Height="40" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" Margin="0,0,10,0" ToolTip="Open Log Folder"/>
                 <Button x:Name="BtnUpdate" Content="Update Tools" Width="110" Height="40" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" Margin="0,0,10,0" ToolTip="Update Dependencies"/>
                 <Button x:Name="BtnSettings" Content="Settings" Width="90" Height="40" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" ToolTip="Settings"/>
             </StackPanel>
@@ -801,6 +802,7 @@ try {
                                                     <ComboBoxItem>Set Manually</ComboBoxItem>
                                                     <ComboBoxItem>Standard MP4 (H.264, 1080p, CRF 23)</ComboBoxItem>
                                                     <ComboBoxItem>WhatsApp / Web (720p, CRF 28)</ComboBoxItem>
+                                                    <ComboBoxItem>Discord / Email Limit (Auto 24.5MB)</ComboBoxItem>
                                                 </ComboBox>
                                                 <Button x:Name="V_BtnSavePreset" Grid.Column="1" Content="Save as Preset" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="10,0,0,0"/>
                                             </Grid>
@@ -1103,7 +1105,11 @@ try {
                                         <TabItem.Header><TextBlock Text="Single Link"/></TabItem.Header>
                                         <Grid Margin="0,10,0,5">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
-                                            <TextBox x:Name="Y_Link" Text="https://" Height="45"/>
+                                            <Grid Grid.Column="0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="45"/></Grid.ColumnDefinitions>
+                                                <TextBox x:Name="Y_Link" Text="https://" Height="45" Margin="0,0,5,0"/>
+                                                <Button x:Name="Y_BtnPaste" Grid.Column="1" Content="📋" ToolTip="Paste from Clipboard" Height="45" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                            </Grid>
                                             <Button x:Name="Y_BtnPreview" Grid.Column="1" Content="Fetch Video Info" Margin="10,0,0,0" Height="45" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                         </Grid>
                                     </TabItem>
@@ -1270,11 +1276,12 @@ try {
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                     <StackPanel Margin="0,0,10,0">
                                         <TextBlock Text="AI Model (Speed vs Quality)" FontSize="13" Margin="0,0,0,5"/>
-                                        <ComboBox x:Name="S_ScribeModel" SelectedIndex="1">
+                                        <ComboBox x:Name="S_ScribeModel" SelectedIndex="4">
                                             <ComboBoxItem>tiny (Fastest, Lowest Quality)</ComboBoxItem>
                                             <ComboBoxItem>base (Default)</ComboBoxItem>
                                             <ComboBoxItem>small</ComboBoxItem>
                                             <ComboBoxItem>medium</ComboBoxItem>
+                                            <ComboBoxItem>turbo (Fast, Great Quality)</ComboBoxItem>
                                             <ComboBoxItem>large-v3 (Slowest, Best Quality)</ComboBoxItem>
                                         </ComboBox>
                                     </StackPanel>
@@ -1426,7 +1433,14 @@ try {
                 <Button x:Name="BtnShow" Grid.Column="4" Content="Open Folder" FontSize="14" Width="120" Height="45" Background="#4B5563" Foreground="White" Visibility="Collapsed" FontWeight="Bold" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0"/>
                 
                 <Border Grid.Column="5" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="15,0" HorizontalAlignment="Right" VerticalAlignment="Center" Height="45">
-                    <CheckBox x:Name="CbAutoScrollLog" Content="Auto-scroll Live Log" Foreground="{DynamicResource TextBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" IsChecked="True"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <CheckBox x:Name="CbAutoScrollLog" Content="Auto-scroll Live Log" Foreground="{DynamicResource TextBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" IsChecked="True" Margin="0,0,15,0"/>
+                        <ComboBox x:Name="CboPostQueue" Width="130" SelectedIndex="0" ToolTip="Action to perform when queue finishes">
+                            <ComboBoxItem>Do Nothing</ComboBoxItem>
+                            <ComboBoxItem>Sleep PC</ComboBoxItem>
+                            <ComboBoxItem>Shutdown PC</ComboBoxItem>
+                        </ComboBox>
+                    </StackPanel>
                 </Border>
             </Grid>
 
@@ -1465,13 +1479,13 @@ try {
     # Find and map all XAML UI elements to their corresponding PowerShell variables
     $UIElements = @(
         "TaskbarProgress",
-        "MainTabs", "BtnRun", "BtnShow", "BtnSettings", "BtnUpdate", "BtnCancel", "BtnSkip", "BtnReset", "StatusText", "TxtETA", "PBar", "LogBox", "CbAutoScrollLog", "TxtSubtitle",
+        "CboPostQueue", "MainTabs", "BtnRun", "BtnShow", "BtnSettings", "BtnLogs", "BtnUpdate", "BtnCancel", "BtnSkip", "BtnReset", "StatusText", "TxtETA", "PBar", "LogBox", "CbAutoScrollLog", "TxtSubtitle",
         "TabAudio", "TabVideo", "TabImage", "TabMuxing", "TabDownload", "ExpLog",
         "A_InList", "A_OutDir", "A_BtnAdd", "A_BtnClear", "A_BtnInfo", "A_BtnOut", "A_CFormat", "A_CQual", "A_CChan", "A_CMeta", "A_CheckNorm", "A_TrimStart", "A_TrimEnd", "A_SliderTrimStart", "A_SliderTrimEnd", "A_CheckExtract", "A_CtxRemove", "A_CtxClear", "A_CheckCustomParams", "A_CustomParamsPanel", "A_ParamsPreview", "A_CustomParams",
         "V_InList", "V_OutDir", "V_OutFilename", "V_CheckSmartName", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CSub", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderTrimStart", "V_SliderTrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
         "I_InList", "I_OutDir", "I_BtnAdd", "I_BtnClear", "I_BtnInfo", "I_BtnOut", "I_CFormat", "I_CQual", "I_CRes", "I_CheckMeta", "I_CtxRemove", "I_CtxClear",
         "M_InVideo", "M_InAudio", "M_OutFile", "M_BtnVid", "M_BtnAud", "M_BtnOut",
-        "Y_InputTabs", "Y_BatchFile", "Y_BtnBatchBrowse", "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
+        "Y_InputTabs", "Y_BatchFile", "Y_BtnBatchBrowse", "Y_Link", "Y_BtnPaste", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
         "TabSpecial", "SpecialSubTabs", "S_VisAudio", "S_VisImg", "S_VisStyle", "S_BtnVisAud", "S_BtnVisImg", "S_StabIn", "S_BtnStabIn", "S_StabLevel",
         "S_ScribeIn", "S_BtnScribeIn", "S_ScribeLang", "S_CheckBurn", "S_ScribeFormat", "S_ScribeModel", "S_ScribeTask",
         "TabSpecialUpscale", "S_UpscaleIn", "S_BtnUpscaleIn", "S_UpscaleModel", "S_UpscaleScale", "S_UpscaleOutDir", "S_BtnUpscaleOut",
@@ -2080,16 +2094,18 @@ try {
         $hwCb = Get-CbVal $V_CHWAccel
         
         $enc = "x264"
+        $enableHwDec = $false
         if ($vCodecCb -match "H\.265") {
-            if ($hwCb -match "NVIDIA") { $enc = "nvenc_h265" } elseif ($hwCb -match "AMD") { $enc = "vce_h265" } elseif ($hwCb -match "Intel") { $enc = "qsv_h265" } else { $enc = "x265" }
+            if ($hwCb -match "NVIDIA") { $enc = "nvenc_h265"; $enableHwDec = $true } elseif ($hwCb -match "AMD") { $enc = "vce_h265"; $enableHwDec = $true } elseif ($hwCb -match "Intel") { $enc = "qsv_h265"; $enableHwDec = $true } else { $enc = "x265" }
         }
         elseif ($vCodecCb -match "AV1") {
-            if ($hwCb -match "Intel") { $enc = "qsv_av1" } else { $enc = "svt_av1" }
+            if ($hwCb -match "Intel") { $enc = "qsv_av1"; $enableHwDec = $true } else { $enc = "svt_av1" }
         }
         else {
-            if ($hwCb -match "NVIDIA") { $enc = "nvenc_h264" } elseif ($hwCb -match "AMD") { $enc = "vce_h264" } elseif ($hwCb -match "Intel") { $enc = "qsv_h264" }
+            if ($hwCb -match "NVIDIA") { $enc = "nvenc_h264"; $enableHwDec = $true } elseif ($hwCb -match "AMD") { $enc = "vce_h264"; $enableHwDec = $true } elseif ($hwCb -match "Intel") { $enc = "qsv_h264"; $enableHwDec = $true }
         }
         $argList.AddRange([string[]]@("-e", $enc))
+        if ($enableHwDec) { $argList.AddRange([string[]]@("--enable-hw-decoding", "nvdec,qsv,d3d11va")) }
 
         # Audio
         $aCodecCb = Get-CbVal $V_CAudio
@@ -2821,8 +2837,9 @@ $BtnSettings.Add_Click({
             }
             else {
                 $idx = $V_Preset.SelectedIndex
-                if ($idx -eq 1) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 1; $V_SliderCRF.Value = 23 }
-                elseif ($idx -eq 2) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 2; $V_SliderCRF.Value = 28 }
+                if ($idx -eq 1) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 1; $V_SliderCRF.Value = 23; $V_CheckTargetSize.IsChecked = $false }
+                elseif ($idx -eq 2) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 2; $V_SliderCRF.Value = 28; $V_CheckTargetSize.IsChecked = $false }
+                elseif ($idx -eq 3) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 1; $V_CheckTargetSize.IsChecked = $true; $V_TargetSizeMB.Text = "24.5" }
             }
         })
 
@@ -3121,7 +3138,7 @@ $BtnSettings.Add_Click({
 
                     $pinfo = New-Object System.Diagnostics.ProcessStartInfo
                     $pinfo.FileName = $script:State.ffmpeg
-                    $pinfo.Arguments = "-y -hide_banner -ss $timeStr -i `"$filePath`" -frames:v 1 -q:v 2 -vf scale=200:-1 `"$outThumb`""
+                    $pinfo.Arguments = "-y -hide_banner -ss $timeStr -i `"$filePath`" -frames:v 1 -q:v 2 -threads 1 -vf scale=200:-1 `"$outThumb`""
                     $pinfo.UseShellExecute = $false; $pinfo.CreateNoWindow = $true
                     $procs.Add([System.Diagnostics.Process]::Start($pinfo))
                 }
@@ -3405,6 +3422,22 @@ $BtnSettings.Add_Click({
 
     $Y_Link.Add_GotKeyboardFocus({ if ($Y_Link.Text -eq "https://") { $Y_Link.Text = "" } })
     $Y_Link.Add_LostKeyboardFocus({ if ([string]::IsNullOrWhiteSpace($Y_Link.Text)) { $Y_Link.Text = "https://" } })
+    
+    $Y_BtnPaste.Add_Click({
+        if ([System.Windows.Clipboard]::ContainsText()) {
+            $clip = [System.Windows.Clipboard]::GetText().Trim()
+            if ($clip -match "^(https?://|www\.)") {
+                $Y_Link.Text = $clip
+                Update-YtDlpPreview
+            } else {
+                [void][System.Windows.MessageBox]::Show("Clipboard does not contain a valid URL.", "Invalid Paste", 0, 48)
+            }
+        }
+    })
+    
+    $BtnLogs.Add_Click({
+        if (Test-Path $LogDir) { [void](Start-Process "explorer.exe" -ArgumentList "`"$LogDir`"") }
+    })
 
     # Validates if an inputted URL is supported by yt-dlp by referencing the markdown from GitHub
     function CheckYtDlpSupport([string]$link) {
@@ -3656,6 +3689,18 @@ $BtnSettings.Add_Click({
             Show-Toast -Title "Batch Complete" -Message $msg
             
             Save-Queue
+            
+            # Post-Queue Actions
+            if ($null -ne $CboPostQueue -and $CboPostQueue.SelectedIndex -gt 0) {
+                $action = Get-CbVal $CboPostQueue
+                if ($action -match "Shutdown") {
+                    Stop-ProcessTree $script:State.p
+                    [void](Start-Process "shutdown.exe" -ArgumentList "/s /t 60 /c `"Media Converter Pro finished its queue. Shutting down in 60 seconds...`"" -WindowStyle Hidden)
+                } elseif ($action -match "Sleep") {
+                    [void](Add-Type -MemberDefinition '[DllImport("powrprof.dll")] public static extern bool SetSuspendState(bool hiberate, bool forceCritical, bool disableWakeEvent);' -Name "Power" -Namespace "WinApi" -PassThru)::SetSuspendState($false, $true, $false)
+                }
+            }
+            
             return
         }
 
