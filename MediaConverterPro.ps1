@@ -3109,7 +3109,7 @@ $BtnSettings.Add_Click({
                 if ($duration -le 0) { throw "Invalid duration calculated." }
 
                 # Phase 1: Launch all 10 FFmpeg extractions in parallel
-                $procs = @()
+                $procs = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
                 for ($i = 1; $i -le 10; $i++) {
                     $percent = $i * 9 
                     $targetSec = $startSecs + ($duration * ($percent / 100.0))
@@ -3123,7 +3123,7 @@ $BtnSettings.Add_Click({
                     $pinfo.FileName = $script:State.ffmpeg
                     $pinfo.Arguments = "-y -hide_banner -ss $timeStr -i `"$filePath`" -frames:v 1 -q:v 2 -vf scale=200:-1 `"$outThumb`""
                     $pinfo.UseShellExecute = $false; $pinfo.CreateNoWindow = $true
-                    $procs += [System.Diagnostics.Process]::Start($pinfo)
+                    $procs.Add([System.Diagnostics.Process]::Start($pinfo))
                 }
 
                 # Phase 2: Wait for all extractions to complete simultaneously WITHOUT freezing the UI
@@ -4627,6 +4627,9 @@ $BtnSettings.Add_Click({
                         HasCustomParams = $hasCustom
                         Retried         = $false
                         IsYtDlp         = $true
+                        IsWhisper       = $false
+                        CustomTool      = ""
+                        InputFile       = $processLink
                         SelectedRes     = (Get-CbVal $Y_Res)
                         OutputFile      = $null
                         OutputDir       = $outDir
@@ -4893,13 +4896,13 @@ $BtnSettings.Add_Click({
                     $filter1 = "vidstabdetect=shakiness=${shakiness}:result=$trfName"
                     $argPass1 = @("-hide_banner", "-y", "-i", $S_StabIn.Text, "-vf", $filter1, "-f", "null", "-")
 
-                    $script:State.BatchQueue.Add(@{ Args = $argPass1; SafeArgs = $argPass1; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $null; ListBox = $null; ListItem = $null; WorkDir = $env:TEMP })
+                    $script:State.BatchQueue.Add(@{ Args = $argPass1; SafeArgs = $argPass1; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; IsWhisper = $false; CustomTool = ""; OutputDir = $env:TEMP; InputFile = $S_StabIn.Text; OutputFile = $null; ListBox = $null; ListItem = $null })
 
                     # PASS 2: Transformation
                     $filter2 = "vidstabtransform=smoothing=${smoothing}:input=$trfName"
                     $argPass2 = @("-hide_banner", "-y", "-i", $S_StabIn.Text, "-vf", $filter2, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "copy", $outFile)
 
-                    $script:State.BatchQueue.Add(@{ Args = $argPass2; SafeArgs = $argPass2; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $null; ListItem = $S_StabIn.Text; WorkDir = $env:TEMP })
+                    $script:State.BatchQueue.Add(@{ Args = $argPass2; SafeArgs = $argPass2; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; IsWhisper = $false; CustomTool = ""; OutputDir = $env:TEMP; InputFile = $S_StabIn.Text; OutputFile = $outFile; ListBox = $null; ListItem = $S_StabIn.Text })
                 }
                 # AI Upscaler Sub-Tab
                 elseif ($subIdx -eq 1) {
@@ -5063,7 +5066,7 @@ $BtnSettings.Add_Click({
 
                     $argArray = @("-i", $inFilePath, "-o", $outFile, "-n", $model, "-s", $scale, "-m", $mDir)
 
-                    $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = $script:State.upscayl; OutputFile = $outFile; ListBox = $null; ListItem = $null; OutputDir = $esrganOutDir })
+                    $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; IsWhisper = $false; CustomTool = $script:State.upscayl; OutputDir = $esrganOutDir; InputFile = $inFilePath; OutputFile = $outFile; ListBox = $null; ListItem = $null })
                 }
             }
             # Generic parsing block for Audio, Video, and Image tabs executing loop-based batches
