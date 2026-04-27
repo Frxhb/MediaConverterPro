@@ -163,7 +163,7 @@ try {
     # Add Context Menu to Tray Icon for actual exit
     $trayMenu = New-Object System.Windows.Forms.ContextMenu
     $trayExitItem = New-Object System.Windows.Forms.MenuItem
-    $trayExitItem.Text = "Exit Media Converter Pro"
+    $trayExitItem.Text = "Quit Media Converter Pro"
     $trayExitItem.add_Click({
         $script:ForceClose = $true
         $window.Close()
