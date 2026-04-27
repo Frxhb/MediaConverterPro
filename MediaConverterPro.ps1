@@ -209,7 +209,7 @@ try {
         handbrakeFound         = $false
         jsRuntimeFound         = $false
         upscaylFound           = $false
-        BatchQueue             = @()
+        BatchQueue             = [System.Collections.Generic.List[hashtable]]::new()
         CurrentJobIndex        = 0
         p                      = $null # Active background process
         totalDuration          = 0     # For progress bar calculation
@@ -1708,7 +1708,7 @@ try {
                                 $savedQueue = $rawContent | ConvertFrom-Json
                                 if ($null -eq $savedQueue) { throw "Queue file is invalid." }
                                 foreach ($sq in $savedQueue) {
-                                    $script:State.BatchQueue += @{
+                                    $script:State.BatchQueue.Add(@{
                                         Args            = [string[]]$sq.Args
                                         SafeArgs        = [string[]]$sq.SafeArgs
                                         HasCustomParams = [bool]$sq.HasCustomParams
@@ -1721,7 +1721,7 @@ try {
                                         OutputFile      = $sq.OutputFile
                                         ListBox         = $null
                                         ListItem        = $null
-                                    }
+                                    })
                                 }
                                 $BtnRun.IsEnabled = $false; $BtnUpdate.IsEnabled = $false; $BtnCancel.IsEnabled = $true; $BtnSkip.IsEnabled = $true
                                 $LogBox.AppendText("[RESUME] Loaded $($script:State.BatchQueue.Count) jobs from previous session.`r`n")
@@ -2832,13 +2832,24 @@ $BtnSettings.Add_Click({
         foreach ($item in $List.Items) { [void]$existingItems.Add($item.ToString()) }
 
         $videoDetected = $false
+        $searchOption = [System.IO.SearchOption]::TopDirectoryOnly
+
+        # 1. Pre-scan: Check if any of the dropped items is a directory
+        $hasDir = $false
+        foreach ($p in $Paths) { if ([System.IO.Directory]::Exists([string]$p)) { $hasDir = $true; break } }
+
+        # 2. If a directory is dropped, ask the user if they want recursive sub-folder scanning
+        if ($hasDir) {
+            $ans = [System.Windows.MessageBox]::Show("You dropped one or more folders.`n`nDo you want to include files inside sub-folders too?", "Include Sub-Folders?", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+            if ($ans -eq "Yes") { $searchOption = [System.IO.SearchOption]::AllDirectories }
+        }
 
         foreach ($p in $Paths) {
             $pStr = [string]$p
             if ([System.IO.Directory]::Exists($pStr)) { 
                 try {
-                    # Optimized to EnumerateFiles for immediate yield and lower memory pressure
-                    $files = [System.IO.Directory]::EnumerateFiles($pStr, "*.*", [System.IO.SearchOption]::TopDirectoryOnly)
+                    # Optimized to EnumerateFiles with dynamic SearchOption (Yields memory cleanly)
+                    $files = [System.IO.Directory]::EnumerateFiles($pStr, "*.*", $searchOption)
                     foreach ($f in $files) {
                         if ($f -match "(?i)$ExtRegex" -and $existingItems.Add($f)) { 
                             [void]$List.Items.Add($f)
@@ -2847,7 +2858,7 @@ $BtnSettings.Add_Click({
                     }
                 }
                 catch {
-                    $LogBox.AppendText("`r`n[WARNING] Skipped restricted folder: $pStr`r`n")
+                    if ($null -ne $LogBox) { $LogBox.AppendText("`r`n[WARNING] Skipped restricted folder: $pStr`r`n") }
                 }
             } 
             elseif ([System.IO.File]::Exists($pStr)) { 
@@ -4152,7 +4163,7 @@ $BtnSettings.Add_Click({
             }
             $tabIndex = $MainTabs.SelectedIndex
     
-            $script:State.BatchQueue = @()
+            $script:State.BatchQueue = [System.Collections.Generic.List[hashtable]]::new()
             $script:State.CurrentJobIndex = 0
             $script:State.YtDlpDownloadedTitles = @() 
             $script:State.YtDlpSkippedLinks = @() # ADDED: Track skipped links
@@ -4207,7 +4218,7 @@ $BtnSettings.Add_Click({
                 $targetFile = Get-UniqueFileName $baseTargetFile
         
                 $argArray = @("-hide_banner", "-y", "-i", $M_InVideo.Text, "-i", $M_InAudio.Text, "-c", "copy", "-map", "0:v:0", "-map", "1:a:0", "-shortest", $targetFile)
-                $script:State.BatchQueue += @{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $targetFile; ListBox = $null; ListItem = $null }
+                $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $targetFile; ListBox = $null; ListItem = $null })
             }
             # Direct parsing block for Tab: Download
             elseif ($tabIndex -eq 4) {
@@ -4560,7 +4571,7 @@ $BtnSettings.Add_Click({
                             $ans = Show-PlaylistDialog -linkUrl $processLink -isBatch $isBatch
                             
                             if ($ans -eq "Cancel") { 
-                                $script:State.BatchQueue = @() 
+                                $script:State.BatchQueue.Clear() 
                                 $LogBox.AppendText("`r`n[CANCEL] Queue setup aborted by user.`r`n")
                                 return 
                             }
@@ -4610,7 +4621,7 @@ $BtnSettings.Add_Click({
                     $argsFull = Get-YtDlpArgs -isPreview $false -ExcludeCustom $false -PlaylistFlag $playlistFlag -TargetLink $processLink
                     $hasCustom = [bool]($Y_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($Y_CustomParams.Text))
 
-                    $script:State.BatchQueue += @{ 
+                    $script:State.BatchQueue.Add(@{ 
                         Args            = $argsFull
                         SafeArgs        = $argsSafe
                         HasCustomParams = $hasCustom
@@ -4624,7 +4635,7 @@ $BtnSettings.Add_Click({
                         ActiveOutput    = $null
                         ListBox         = $null
                         ListItem        = $null 
-                    }
+                    })
                 }
 
                 if ($script:State.BatchQueue.Count -eq 0) { return } # Stop if all links were cancelled/invalid
@@ -4819,9 +4830,7 @@ $BtnSettings.Add_Click({
                     $ffmpegDir = [System.IO.Path]::GetDirectoryName($script:State.ffmpeg)
                     if ($env:PATH -notmatch [regex]::Escape($ffmpegDir)) { $env:PATH = "$ffmpegDir;" + $env:PATH }
             
-                    $script:State.BatchQueue += @{ Args = $scribeArgs; SafeArgs = $scribeArgs; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = "python.exe"; IsWhisper = $true; OutputDir = $whisperOutDir; InputFile = $inFile; OutputFile = $outSrt; ListBox = $null; ListItem = $null }
-                    
-                    # Logic to immediately queue an ffmpeg job to burn the transcribed file onto the video
+                    $script:State.BatchQueue.Add(@{ Args = $scribeArgs; SafeArgs = $scribeArgs; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = "python.exe"; IsWhisper = $true; OutputDir = $whisperOutDir; InputFile = $inFile; OutputFile = $outSrt; ListBox = $null; ListItem = $null })
                     if ($S_CheckBurn.IsChecked) {
                         $ext = [System.IO.Path]::GetExtension($inFile).ToLower()
                         $audioExts = @(".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac")
@@ -4833,7 +4842,7 @@ $BtnSettings.Add_Click({
                             $outFile = Get-UniqueFileName (Join-Path $whisperOutDir "SCRIBED_$([System.IO.Path]::GetFileName($inFile))")
                             $safeOutSrt = $outSrt.Replace('\', '/').Replace(':', '\:').Replace('[', '\[').Replace(']', '\]').Replace("'", "\'").Replace(',', '\,')
                             $burnArgs = @("-hide_banner", "-y", "-i", $inFile, "-vf", "subtitles='''$safeOutSrt'''", "-c:a", "copy", $outFile)
-                            $script:State.BatchQueue += @{ Args = $burnArgs; SafeArgs = $burnArgs; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = ""; IsWhisper = $false; OutputDir = $whisperOutDir; InputFile = $inFile; OutputFile = $outFile; ListBox = $null; ListItem = $null }
+                            $script:State.BatchQueue.Add(@{ Args = $burnArgs; SafeArgs = $burnArgs; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = ""; IsWhisper = $false; OutputDir = $whisperOutDir; InputFile = $inFile; OutputFile = $outFile; ListBox = $null; ListItem = $null })
                         }
                     }
                 }
@@ -4859,7 +4868,7 @@ $BtnSettings.Add_Click({
                     else {
                         $argArray = @("-hide_banner", "-y", "-i", $S_VisAudio.Text, "-filter_complex", "[0:a]$filter[v]", "-map", "[v]", "-map", "0:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", $outFile)
                     }
-                    $script:State.BatchQueue += @{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $null; ListItem = $null }
+                    $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $null; ListItem = $null })
                 }
                 # Video Stabilizer Sub-Tab
                 elseif ($subIdx -eq 3) {
@@ -4884,13 +4893,13 @@ $BtnSettings.Add_Click({
                     $filter1 = "vidstabdetect=shakiness=${shakiness}:result=$trfName"
                     $argPass1 = @("-hide_banner", "-y", "-i", $S_StabIn.Text, "-vf", $filter1, "-f", "null", "-")
 
-                    $script:State.BatchQueue += @{ Args = $argPass1; SafeArgs = $argPass1; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $null; ListBox = $null; ListItem = $null; WorkDir = $env:TEMP }
+                    $script:State.BatchQueue.Add(@{ Args = $argPass1; SafeArgs = $argPass1; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $null; ListBox = $null; ListItem = $null; WorkDir = $env:TEMP })
 
                     # PASS 2: Transformation
                     $filter2 = "vidstabtransform=smoothing=${smoothing}:input=$trfName"
                     $argPass2 = @("-hide_banner", "-y", "-i", $S_StabIn.Text, "-vf", $filter2, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "copy", $outFile)
 
-                    $script:State.BatchQueue += @{ Args = $argPass2; SafeArgs = $argPass2; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $null; ListItem = $S_StabIn.Text; WorkDir = $env:TEMP }
+                    $script:State.BatchQueue.Add(@{ Args = $argPass2; SafeArgs = $argPass2; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $null; ListItem = $S_StabIn.Text; WorkDir = $env:TEMP })
                 }
                 # AI Upscaler Sub-Tab
                 elseif ($subIdx -eq 1) {
@@ -5054,7 +5063,7 @@ $BtnSettings.Add_Click({
 
                     $argArray = @("-i", $inFilePath, "-o", $outFile, "-n", $model, "-s", $scale, "-m", $mDir)
 
-                    $script:State.BatchQueue += @{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = $script:State.upscayl; OutputFile = $outFile; ListBox = $null; ListItem = $null; OutputDir = $esrganOutDir }
+                    $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; CustomTool = $script:State.upscayl; OutputFile = $outFile; ListBox = $null; ListItem = $null; OutputDir = $esrganOutDir })
                 }
             }
             # Generic parsing block for Audio, Video, and Image tabs executing loop-based batches
@@ -5092,7 +5101,7 @@ $BtnSettings.Add_Click({
                         $argsFull = (Get-AudioFfmpegArgs -IsPreview $false -inFile $inFile -outFile $outFile -ExcludeCustom $false).Args
                         $hasCustom = [bool]($A_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($A_CustomParams.Text))
                         
-                        $script:State.BatchQueue += @{ Args = $argsFull; SafeArgs = $argsSafe; HasCustomParams = $hasCustom; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile }
+                        $script:State.BatchQueue.Add(@{ Args = $argsFull; SafeArgs = $argsSafe; HasCustomParams = $hasCustom; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile })
                     }
                     elseif ($tabIndex -eq 1) { 
                         $fmtRaw = Get-CbVal $V_CFormat
@@ -5117,7 +5126,7 @@ $BtnSettings.Add_Click({
                             $targetTool = "" # Defaults to FFmpeg in the runner loop
                         }
 
-                        $script:State.BatchQueue += @{ 
+                        $script:State.BatchQueue.Add(@{ 
                             Args            = $argsFull
                             SafeArgs        = $argsFull
                             HasCustomParams = $hasCustom
@@ -5129,7 +5138,7 @@ $BtnSettings.Add_Click({
                             ListItem        = $inFile
                             InputFile       = $inFile
                             JobStart        = Get-Date
-                        }
+                        })
                     }
                     elseif ($tabIndex -eq 2) { 
                         $rawFmt = Get-CbVal $I_CFormat
@@ -5165,7 +5174,7 @@ $BtnSettings.Add_Click({
                         }
 
                         $argArray += $outFile
-                        $script:State.BatchQueue += @{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile }
+                        $script:State.BatchQueue.Add(@{ Args = $argArray; SafeArgs = $argArray; HasCustomParams = $false; Retried = $false; IsYtDlp = $false; OutputFile = $outFile; ListBox = $list; ListItem = $inFile })
                     }
                 }
             }
@@ -5291,11 +5300,12 @@ $BtnSettings.Add_Click({
                 if ($script:State.CurrentJobIndex -lt $script:State.BatchQueue.Count) {
                     # Preserve the active job in the queue so the exit handler cleans it up safely
                     $currentJob = $script:State.BatchQueue[$script:State.CurrentJobIndex]
-                    $script:State.BatchQueue = @($currentJob)
+                    $script:State.BatchQueue.Clear()
+                    $script:State.BatchQueue.Add($currentJob)
                     $script:State.CurrentJobIndex = 0
                 }
                 else {
-                    $script:State.BatchQueue = @()
+                    $script:State.BatchQueue.Clear()
                 }
 
                 # Send kill signal instantly
