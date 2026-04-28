@@ -39,18 +39,29 @@ namespace WinApi {
         [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
         public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
     }
+
+    public class ShellDetect {
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        public static extern uint FindExecutable(string lpFile, string lpDirectory, [Out] StringBuilder lpResult);
+    }
 }
 '@
 
+$DllCache = Join-Path $env:TEMP "MCP_WinApi_Cached.dll"
 try {
     if (-not ("WinApi.WinApiDragDrop" -as [type])) {
-        Add-Type -TypeDefinition $csharpCode -ErrorAction Stop
+        if (-not (Test-Path -LiteralPath $DllCache)) {
+            # Compile exactly once and save to temp folder
+            Add-Type -TypeDefinition $csharpCode -OutputAssembly $DllCache -ErrorAction Stop
+        }
+        # Load the pre-compiled DLL (Takes milliseconds instead of seconds)
+        Add-Type -Path $DllCache -ErrorAction Stop
     }
     [WinApi.ConsoleHelper]::HideConsole()
     $winApi = [WinApi.WinApiDragDrop]
 } 
 catch {
-    # If the types are already loaded from a previous run in this session, safely suppress the error and bind them.
+    # Fallback if already loaded in current session or locked
     $winApi = [WinApi.WinApiDragDrop]
 }
 
@@ -2401,12 +2412,10 @@ try {
     $Y_Type.SelectedIndex = 0
 
     # --- Bulletproof Auto-Detect Default Browser ---
+    # --- Bulletproof Auto-Detect Default Browser ---
     try {
         $tempFile = Join-Path $env:TEMP "mcp_browser_detect.html"
         "<html></html>" | Out-File -FilePath $tempFile -Encoding utf8 -Force
-        
-        $sig = '[DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern uint FindExecutable(string lpFile, string lpDirectory, [Out] System.Text.StringBuilder lpResult);'
-        if (-not ("WinApi.ShellDetect" -as [type])) { Add-Type -MemberDefinition $sig -Name "ShellDetect" -Namespace "WinApi" }
         
         $outBuf = New-Object System.Text.StringBuilder 1024
         [void][WinApi.ShellDetect]::FindExecutable($tempFile, $null, $outBuf)
