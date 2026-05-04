@@ -4286,7 +4286,7 @@ $BtnSettings.Add_Click({
                     
                     # Read text file, ignore empty lines and comments starting with #
                     try {
-                        $lines = Get-Content -LiteralPath $batchPath -ErrorAction Stop
+                        $lines = @(Get-Content -LiteralPath $batchPath -ErrorAction Stop)
                     } catch {
                         [void][System.Windows.MessageBox]::Show("Could not read batch file. It may be open in another program.`n`n$($_.Exception.Message)", "File Error", 0, 16)
                         return
