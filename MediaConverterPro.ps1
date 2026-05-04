@@ -813,7 +813,7 @@ try {
                                                     <ComboBoxItem>Set Manually</ComboBoxItem>
                                                     <ComboBoxItem>Standard MP4 (H.264, 1080p, CRF 23)</ComboBoxItem>
                                                     <ComboBoxItem>WhatsApp / Web (720p, CRF 28)</ComboBoxItem>
-                                                    <ComboBoxItem>Discord / Email Limit (Auto 24.5MB)</ComboBoxItem>
+                                                    <ComboBoxItem>Discord / Email Limit (Auto 9.5MB)</ComboBoxItem>
                                                 </ComboBox>
                                                 <Button x:Name="V_BtnSavePreset" Grid.Column="1" Content="Save as Preset" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="10,0,0,0"/>
                                             </Grid>
@@ -945,7 +945,7 @@ try {
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <CheckBox x:Name="V_CheckTargetSize" Content="Compress to exact target size (Overrides CRF): " VerticalAlignment="Center" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold"/>
-                                                <TextBox x:Name="V_TargetSizeMB" Grid.Column="1" Text="24.5" Margin="10,0,0,0" ToolTip="Target in MB (e.g. 24.5 for Discord)"/>
+                                                <TextBox x:Name="V_TargetSizeMB" Grid.Column="1" Text="9.5" Margin="10,0,0,0" ToolTip="Target in MB (e.g. 9.5 for Discord)"/>
                                                 <TextBlock Grid.Column="2" Text="MB" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource MutedBrush}"/>
                                             </Grid>
                                         </Border>
@@ -2841,7 +2841,7 @@ $BtnSettings.Add_Click({
                 $idx = $V_Preset.SelectedIndex
                 if ($idx -eq 1) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 1; $V_SliderCRF.Value = 23; $V_CheckTargetSize.IsChecked = $false }
                 elseif ($idx -eq 2) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 2; $V_SliderCRF.Value = 28; $V_CheckTargetSize.IsChecked = $false }
-                elseif ($idx -eq 3) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 1; $V_CheckTargetSize.IsChecked = $true; $V_TargetSizeMB.Text = "24.5" }
+                elseif ($idx -eq 3) { $V_CFormat.SelectedIndex = 0; $V_CCodec.SelectedIndex = 0; $V_CRes.SelectedIndex = 1; $V_CheckTargetSize.IsChecked = $true; $V_TargetSizeMB.Text = "9.5" }
             }
         })
 
