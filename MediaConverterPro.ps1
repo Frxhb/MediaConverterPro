@@ -813,7 +813,7 @@ try {
                                                     <ComboBoxItem>Set Manually</ComboBoxItem>
                                                     <ComboBoxItem>Standard MP4 (H.264, 1080p, CRF 23)</ComboBoxItem>
                                                     <ComboBoxItem>WhatsApp / Web (720p, CRF 28)</ComboBoxItem>
-                                                    <ComboBoxItem>Discord / Email Limit (Auto 9.5MB)</ComboBoxItem>
+                                                    <ComboBoxItem>Discord Limit (Auto 9.5MB)</ComboBoxItem>
                                                 </ComboBox>
                                                 <Button x:Name="V_BtnSavePreset" Grid.Column="1" Content="Save as Preset" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="10,0,0,0"/>
                                             </Grid>
