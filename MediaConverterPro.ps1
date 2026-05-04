@@ -1878,7 +1878,7 @@ try {
         }
 
         if ($Y_CheckMeta.IsChecked) { $argList.AddRange([string[]]@("--embed-metadata", "--embed-thumbnail", "--convert-thumbnails", "jpg")) }
-        if ($Y_CheckSubs.IsChecked) { $argList.Add("--embed-subs") }
+        if ($Y_CheckSubs.IsChecked) { $argList.AddRange([string[]]@("--write-auto-subs", "--embed-subs")) }
         if ($Y_CheckSponsor.IsChecked) { $argList.AddRange([string[]]@("--sponsorblock-remove", "all")) }
 
         if (-not $ExcludeCustom -and $Y_CheckCustomParams.IsChecked -and -not [string]::IsNullOrWhiteSpace($Y_CustomParams.Text)) {
@@ -3695,11 +3695,18 @@ $BtnSettings.Add_Click({
             # Post-Queue Actions
             if ($null -ne $CboPostQueue -and $CboPostQueue.SelectedIndex -gt 0) {
                 $action = Get-CbVal $CboPostQueue
+                
+                # Reset to 'Do Nothing' to prevent accidental looping on the next run
+                $CboPostQueue.Dispatcher.InvokeAsync([Action] { $CboPostQueue.SelectedIndex = 0 }) | Out-Null
+
                 if ($action -match "Shutdown") {
                     Stop-ProcessTree $script:State.p
                     [void](Start-Process "shutdown.exe" -ArgumentList "/s /t 60 /c `"Media Converter Pro finished its queue. Shutting down in 60 seconds...`"" -WindowStyle Hidden)
                 } elseif ($action -match "Sleep") {
-                    [void](Add-Type -MemberDefinition '[DllImport("powrprof.dll")] public static extern bool SetSuspendState(bool hiberate, bool forceCritical, bool disableWakeEvent);' -Name "Power" -Namespace "WinApi" -PassThru)::SetSuspendState($false, $true, $false)
+                    if (-not ("WinApi.Power" -as [type])) {
+                        Add-Type -MemberDefinition '[DllImport("powrprof.dll")] public static extern bool SetSuspendState(bool hiberate, bool forceCritical, bool disableWakeEvent);' -Name "Power" -Namespace "WinApi"
+                    }
+                    [WinApi.Power]::SetSuspendState($false, $true, $false)
                 }
             }
             
@@ -5314,6 +5321,7 @@ $BtnSettings.Add_Click({
             if ($null -ne $Y_CheckCookie) { $Y_CheckCookie.IsChecked = $false }
             if ($null -ne $Y_CheckAutoPoToken) { $Y_CheckAutoPoToken.IsChecked = $false }
             if ($null -ne $Y_PoToken) { $Y_PoToken.IsEnabled = $true; $Y_PoToken.Opacity = 1.0 }
+            if ($null -ne $CboPostQueue) { $CboPostQueue.SelectedIndex = 0 }
 
             # Reset Progress & UI State
             if ($null -ne $V_PreviewStack) { $V_PreviewStack.Children.Clear() }
