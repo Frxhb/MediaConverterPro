@@ -2863,6 +2863,8 @@ $BtnSettings.Add_Click({
             if ($ans -eq "Yes") { $searchOption = [System.IO.SearchOption]::AllDirectories }
         }
 
+        $compiledRegex = [System.Text.RegularExpressions.Regex]::new("(?i)$ExtRegex", [System.Text.RegularExpressions.RegexOptions]::Compiled)
+        
         foreach ($p in $Paths) {
             $pStr = [string]$p
             if ([System.IO.Directory]::Exists($pStr)) { 
@@ -2870,7 +2872,7 @@ $BtnSettings.Add_Click({
                     # Optimized to EnumerateFiles with dynamic SearchOption (Yields memory cleanly)
                     $files = [System.IO.Directory]::EnumerateFiles($pStr, "*.*", $searchOption)
                     foreach ($f in $files) {
-                        if ($f -match "(?i)$ExtRegex" -and $existingItems.Add($f)) { 
+                        if ($compiledRegex.IsMatch($f) -and $existingItems.Add($f)) { 
                             [void]$List.Items.Add($f)
                             if ($List.Name -eq "A_InList" -and $f -match "\.(mp4|mkv|avi|mov|webm)$") { $videoDetected = $true }
                         }
@@ -2881,7 +2883,7 @@ $BtnSettings.Add_Click({
                 }
             } 
             elseif ([System.IO.File]::Exists($pStr)) { 
-                if ($pStr -match "(?i)$ExtRegex" -and $existingItems.Add($pStr)) { 
+                if ($compiledRegex.IsMatch($pStr) -and $existingItems.Add($pStr)) { 
                     [void]$List.Items.Add($pStr) 
                     if ($List.Name -eq "A_InList" -and $pStr -match "\.(mp4|mkv|avi|mov|webm)$") { $videoDetected = $true }
                 } 
