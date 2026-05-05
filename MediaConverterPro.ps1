@@ -435,16 +435,45 @@ try {
         <TaskbarItemInfo x:Name="TaskbarProgress" ProgressState="None"/>
     </Window.TaskbarItemInfo>
     <Window.Resources>
-        <SolidColorBrush x:Key="BgBrush" Color="#0F172A"/>
-        <SolidColorBrush x:Key="CardBrush" Color="#1E293B"/>
+        <SolidColorBrush x:Key="BgBrush" Color="#0B0F19"/>
+        <SolidColorBrush x:Key="CardBrush" Color="#151E32"/>
         <SolidColorBrush x:Key="TextBrush" Color="#F8FAFC"/>
         <SolidColorBrush x:Key="MutedBrush" Color="#94A3B8"/>
-        <SolidColorBrush x:Key="BorderBrush" Color="#334155"/>
+        <SolidColorBrush x:Key="BorderBrush" Color="#2A364D"/>
         <SolidColorBrush x:Key="AccentBrush" Color="#6366F1"/>
-        <SolidColorBrush x:Key="InputBgBrush" Color="#0F172A"/>
+        <SolidColorBrush x:Key="InputBgBrush" Color="#0B0F19"/>
         <SolidColorBrush x:Key="DragBrush" Color="#1E1B4B"/>
 
+        <!-- Modern Title Gradient -->
+        <LinearGradientBrush x:Key="TitleGradient" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#3B82F6" Offset="0.0" />
+            <GradientStop Color="#8B5CF6" Offset="1.0" />
+        </LinearGradientBrush>
+
         <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/></Style>
+        
+        <!-- Drop-Shadow Card Styles -->
+        <Style x:Key="ModernCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="20"/>
+            <Setter Property="Margin" Value="0,0,0,15"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect BlurRadius="20" ShadowDepth="4" Direction="270" Color="Black" Opacity="0.15"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ModernSubCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="15"/>
+        </Style>
         
         <Style TargetType="TabItem">
             <Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
@@ -453,7 +482,7 @@ try {
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Border" Background="{TemplateBinding Background}" CornerRadius="8">
+                        <Border x:Name="Border" Background="{TemplateBinding Background}" CornerRadius="10">
                             <ContentPresenter x:Name="ContentSite" VerticalAlignment="Center" HorizontalAlignment="Center" ContentSource="Header" Margin="15,8"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -479,7 +508,7 @@ try {
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Border" Background="{TemplateBinding Background}" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Margin="0,0,5,10">
+                        <Border x:Name="Border" Background="{TemplateBinding Background}" CornerRadius="8" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Margin="0,0,5,10">
                             <ContentPresenter ContentSource="Header" Margin="15,6" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -505,22 +534,25 @@ try {
         <Style TargetType="ListBoxItem">
             <Setter Property="Background" Value="{DynamicResource InputBgBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="Padding" Value="5"/>
+            <Setter Property="Padding" Value="8,5"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border CornerRadius="4" Background="{TemplateBinding Background}" Margin="2">
+                        <Border x:Name="Bd" CornerRadius="6" Background="{TemplateBinding Background}" Margin="2">
                             <ContentPresenter Margin="{TemplateBinding Padding}"/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BorderBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
-                    <Setter Property="Foreground" Value="White"/>
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
         <Style TargetType="ComboBoxItem">
@@ -552,30 +584,33 @@ try {
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Padding" Value="10,8"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBox">
                         <Grid>
                             <ToggleButton x:Name="ToggleButton" Grid.Column="2" Focusable="false"
                                           IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                          ClickMode="Press"
-                                          Background="{TemplateBinding Background}"
-                                          BorderBrush="{TemplateBinding BorderBrush}"
-                                          BorderThickness="{TemplateBinding BorderThickness}">
+                                          ClickMode="Press" Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="ToggleButton">
-                                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                        <Border x:Name="TBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
                                             <Path x:Name="Arrow" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" Data="M0,0 L4,4 L8,0 z"/>
                                         </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="TBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
                                     </ControlTemplate>
                                 </ToggleButton.Template>
                             </ToggleButton>
                             <ContentPresenter x:Name="ContentSite" TextElement.Foreground="{TemplateBinding Foreground}" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" HorizontalAlignment="Left"/>
-                            
                             <Popup x:Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False">
-                                <Border Background="{DynamicResource CardBrush}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Margin="0,4,0,0" MinWidth="{TemplateBinding ActualWidth}" MaxHeight="250">
-                                    <ScrollViewer Margin="2" SnapsToDevicePixels="True">
+                                <Border Background="{DynamicResource CardBrush}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,4,0,0" MinWidth="{TemplateBinding ActualWidth}" MaxHeight="250">
+                                    <Border.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="2" Direction="270" Color="Black" Opacity="0.2"/></Border.Effect>
+                                    <ScrollViewer Margin="4" SnapsToDevicePixels="True">
                                         <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
                                     </ScrollViewer>
                                 </Border>
@@ -586,22 +621,39 @@ try {
             </Setter>
         </Style>
 
-        <Style TargetType="TextBox"><Setter Property="Background" Value="{DynamicResource InputBgBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="8"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Template">
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource InputBgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
-                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
                             <ScrollViewer x:Name="PART_ContentHost" Margin="0"/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <Style TargetType="ListBox"><Setter Property="Background" Value="{DynamicResource InputBgBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="5"/>
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="{DynamicResource InputBgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="5"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBox">
-                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
                             <Grid>
                                 <TextBlock x:Name="WatermarkText" Text="&#x1F4C1; Drag &amp; Drop Media Here" Foreground="{DynamicResource MutedBrush}" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed"/>
                                 <ScrollViewer Focusable="false" Padding="{TemplateBinding Padding}">
@@ -620,37 +672,68 @@ try {
         </Style>
         
         <Style TargetType="CheckBox"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
-        <Style TargetType="Border"><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/></Style>
         
+        <!-- Modern Animated Button -->
         <Style TargetType="Button">
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="6" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                        <Border x:Name="Border" Background="{TemplateBinding Background}" CornerRadius="8" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Border" Property="Opacity" Value="0.85"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Border" Property="Opacity" Value="0.6"/>
+                                <Setter TargetName="Border" Property="RenderTransform">
+                                    <Setter.Value><ScaleTransform ScaleX="0.97" ScaleY="0.97" CenterX="0.5" CenterY="0.5"/></Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Border" Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+        </Style>
+        
+        <!-- Modern Rounded ProgressBar -->
+        <Style TargetType="ProgressBar">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid>
+                            <Border Background="{TemplateBinding Background}" CornerRadius="4"/>
+                            <Border x:Name="PART_Track" CornerRadius="4">
+                                <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="4" HorizontalAlignment="Left"/>
+                            </Border>
+                        </Grid>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
     </Window.Resources>
     
-    <Grid Margin="20">
+    <Grid Margin="25">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,20">
+        <Grid Grid.Row="0" Margin="0,0,0,25">
             <StackPanel>
-                <TextBlock Text="Media Converter Pro" Foreground="{DynamicResource AccentBrush}" FontSize="32" FontWeight="Black"/>
-                <TextBlock x:Name="TxtSubtitle" Text="Open Source Media Editor, Converter and Downloader" Foreground="{DynamicResource MutedBrush}" FontSize="14" Margin="0,2,0,0"/>
+                <TextBlock Text="Media Converter Pro" Foreground="{DynamicResource TitleGradient}" FontSize="34" FontWeight="Black" Margin="0,0,0,2"/>
+                <TextBlock x:Name="TxtSubtitle" Text="Open Source Media Editor, Converter and Downloader" Foreground="{DynamicResource MutedBrush}" FontSize="15" FontWeight="SemiBold"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
-                <Button x:Name="BtnLogs" Content="Logs" Width="70" Height="40" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" Margin="0,0,10,0" ToolTip="Open Log Folder"/>
-                <Button x:Name="BtnUpdate" Content="Update Tools" Width="110" Height="40" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" Margin="0,0,10,0" ToolTip="Update Dependencies"/>
-                <Button x:Name="BtnSettings" Content="Settings" Width="90" Height="40" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" ToolTip="Settings"/>
+                <Button x:Name="BtnLogs" Content="Logs" Width="75" Height="42" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" Margin="0,0,10,0" ToolTip="Open Log Folder"/>
+                <Button x:Name="BtnUpdate" Content="Update Tools" Width="115" Height="42" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" Margin="0,0,10,0" ToolTip="Update Dependencies"/>
+                <Button x:Name="BtnSettings" Content="Settings" Width="95" Height="42" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" ToolTip="Settings"/>
             </StackPanel>
         </Grid>
         
-        <TabControl x:Name="MainTabs" Grid.Row="1" Background="{DynamicResource CardBrush}" BorderBrush="Transparent" BorderThickness="0" Padding="0">
+        <TabControl x:Name="MainTabs" Grid.Row="1" Background="Transparent" BorderBrush="Transparent" BorderThickness="0" Padding="0">
             
             <TabItem x:Name="TabAudio">
                 <TabItem.Header>
@@ -658,12 +741,12 @@ try {
                 </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
                     <StackPanel>
-                        <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,15">
+                        <Border Style="{StaticResource ModernCard}">
                             <StackPanel>
-                                <TextBlock Text="Queue (Drag and Drop here)" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                                <TextBlock Text="Queue (Drag and Drop here)" FontWeight="Bold" FontSize="16" Margin="0,0,0,12"/>
                                 <Grid Margin="0,0,0,15">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
-                                    <ListBox x:Name="A_InList" Height="100" AllowDrop="True" SelectionMode="Extended">
+                                    <ListBox x:Name="A_InList" Height="110" AllowDrop="True" SelectionMode="Extended">
                                         <ListBox.ContextMenu>
                                             <ContextMenu x:Name="A_CtxMenu">
                                                 <MenuItem x:Name="A_CtxRemove" Header="Remove Selected"/>
@@ -672,15 +755,15 @@ try {
                                         </ListBox.ContextMenu>
                                     </ListBox>
                                     <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                        <Button x:Name="A_BtnAdd" Content="+ Files" Height="45" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="0,0,0,10"/>
-                                        <Button x:Name="A_BtnClear" Content="Clear" Height="45" Background="#EF4444" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                        <Button x:Name="A_BtnAdd" Content="+ Files" Height="50" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="0,0,0,10"/>
+                                        <Button x:Name="A_BtnClear" Content="Clear" Height="50" Background="#EF4444" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                     </StackPanel>
-                                    <Button x:Name="A_BtnInfo" Grid.Column="2" Content="Info" Margin="10,0,0,0" Background="{DynamicResource MutedBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Height="45" VerticalAlignment="Top"/>
+                                    <Button x:Name="A_BtnInfo" Grid.Column="2" Content="Info" Margin="10,0,0,0" Background="{DynamicResource MutedBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Height="50" VerticalAlignment="Top"/>
                                 </Grid>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
                                     <TextBox x:Name="A_OutDir" ToolTip="The folder where processed files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow"/>
-                                    <Button x:Name="A_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    <Button x:Name="A_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="42" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -688,7 +771,7 @@ try {
                         <TabControl Background="Transparent" BorderThickness="0">
                             <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Encoding Settings"/></TabItem.Header>
-                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                <Border Style="{StaticResource ModernSubCard}">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
@@ -702,12 +785,12 @@ try {
                             
                             <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Filters &amp; Advanced"/></TabItem.Header>
-                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20" Focusable="True">
+                                <Border Style="{StaticResource ModernSubCard}">
                                     <StackPanel Focusable="True">
                                         <Grid Margin="0,0,0,15">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                             
-                                            <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="15" Margin="0,0,10,0">
+                                            <Border Grid.Column="0" Style="{StaticResource ModernSubCard}" Margin="0,0,10,0">
                                                 <StackPanel>
                                                     <TextBlock Text="Trim Audio" FontSize="14" FontWeight="Bold" Foreground="#EF4444" Margin="0,0,0,10"/>
                                                     <Grid Margin="0,0,0,10">
@@ -729,7 +812,7 @@ try {
                                                 </StackPanel>
                                             </Border>
 
-                                            <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="15" Margin="10,0,0,0">
+                                            <Border Grid.Column="1" Style="{StaticResource ModernSubCard}" Margin="10,0,0,0">
                                                 <StackPanel VerticalAlignment="Center">
                                                     <TextBlock Text="Quick Operations" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
                                                     <CheckBox x:Name="A_CheckNorm" Content="Normalize Audio (R128)" Margin="0,0,0,12" FontWeight="Bold"/>
@@ -738,7 +821,7 @@ try {
                                             </Border>
                                         </Grid>
 
-                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="15">
+                                        <Border Style="{StaticResource ModernSubCard}" Padding="15">
                                             <StackPanel>
                                                 <CheckBox x:Name="A_CheckCustomParams" Content="Add custom FFmpeg params (Live Preview)" FontWeight="Bold"/>
                                                 <StackPanel x:Name="A_CustomParamsPanel" Visibility="Collapsed" Margin="0,15,0,0">
@@ -763,12 +846,12 @@ try {
                 </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
                     <StackPanel>
-                        <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,15">
+                        <Border Style="{StaticResource ModernCard}">
                             <StackPanel>
-                                <TextBlock Text="Queue (Drag and Drop here)" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                                <TextBlock Text="Queue (Drag and Drop here)" FontWeight="Bold" FontSize="16" Margin="0,0,0,12"/>
                                 <Grid Margin="0,0,0,15">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
-                                    <ListBox x:Name="V_InList" Height="100" AllowDrop="True" SelectionMode="Extended">
+                                    <ListBox x:Name="V_InList" Height="110" AllowDrop="True" SelectionMode="Extended">
                                         <ListBox.ContextMenu>
                                             <ContextMenu x:Name="V_CtxMenu">
                                                 <MenuItem x:Name="V_CtxRemove" Header="Remove Selected"/>
@@ -777,17 +860,17 @@ try {
                                         </ListBox.ContextMenu>
                                     </ListBox>
                                     <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                        <Button x:Name="V_BtnAdd" Content="+ Files" Height="45" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="0,0,0,10"/>
-                                        <Button x:Name="V_BtnClear" Content="Clear" Height="45" Background="#EF4444" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                        <Button x:Name="V_BtnAdd" Content="+ Files" Height="50" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="0,0,0,10"/>
+                                        <Button x:Name="V_BtnClear" Content="Clear" Height="50" Background="#EF4444" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                     </StackPanel>
-                                    <Button x:Name="V_BtnInfo" Grid.Column="2" Content="Info" Margin="10,0,0,0" Background="{DynamicResource MutedBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Height="45" VerticalAlignment="Top"/>
+                                    <Button x:Name="V_BtnInfo" Grid.Column="2" Content="Info" Margin="10,0,0,0" Background="{DynamicResource MutedBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Height="50" VerticalAlignment="Top"/>
                                 </Grid>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                    <TextBox x:Name="V_OutDir" Grid.Row="0" ToolTip="The folder where processed files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow" Margin="0,0,0,10" Height="40"/>
-                                    <Button x:Name="V_BtnOut" Grid.Row="0" Grid.Column="1" Content="Select Folder" Margin="10,0,0,10" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
-                                    <TextBox x:Name="V_OutFilename" Grid.Row="1" Grid.Column="0" ToolTip="Edit the final filename for the selected item" Text="" Cursor="IBeam" Height="40"/>
+                                    <TextBox x:Name="V_OutDir" Grid.Row="0" ToolTip="The folder where processed files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow" Margin="0,0,0,10" Height="42"/>
+                                    <Button x:Name="V_BtnOut" Grid.Row="0" Grid.Column="1" Content="Select Folder" Margin="10,0,0,10" Height="42" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    <TextBox x:Name="V_OutFilename" Grid.Row="1" Grid.Column="0" ToolTip="Edit the final filename for the selected item" Text="" Cursor="IBeam" Height="42"/>
                                     <CheckBox x:Name="V_CheckSmartName" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Content="Auto-Update Name" IsChecked="False" IsEnabled="False" VerticalAlignment="Center" Margin="10,0,0,0" ToolTip="Automatically replace audio/video tags in filename (e.g. dtshd to eac3)" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
                                 </Grid>
                             </StackPanel>
@@ -796,10 +879,10 @@ try {
                         <TabControl Background="Transparent" BorderThickness="0">
                             <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Encoding Options"/></TabItem.Header>
-                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                <Border Style="{StaticResource ModernSubCard}">
                                     <StackPanel>
                                         <StackPanel Margin="10,0,10,15">
-                                            <TextBlock Text="Profile (Presets)" FontSize="13" Foreground="#8B5CF6" FontWeight="Bold" Margin="0,0,0,5"/>
+                                            <TextBlock Text="Profile (Presets)" FontSize="13" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold" Margin="0,0,0,5"/>
                                             <Grid>
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
                                                 <ComboBox x:Name="V_Preset" SelectedIndex="0">
@@ -851,7 +934,7 @@ try {
 
                             <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Filters &amp; Editing"/></TabItem.Header>
-                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                <Border Style="{StaticResource ModernSubCard}">
                                     <StackPanel>
                                         <Grid Margin="0,0,0,15">
                                             <Grid.ColumnDefinitions>
@@ -859,7 +942,7 @@ try {
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,0,10,0">
+                                            <Border Grid.Column="0" Style="{StaticResource ModernSubCard}" Margin="0,0,10,0">
                                                 <StackPanel>
                                                     <TextBlock Text="Video Settings" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
                                                     <StackPanel Margin="0,0,0,10"><TextBlock Text="Resolution" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><ComboBox x:Name="V_CRes" SelectedIndex="0"><ComboBoxItem>Original</ComboBoxItem><ComboBoxItem>1080p (FHD)</ComboBoxItem><ComboBoxItem>720p (HD)</ComboBoxItem></ComboBox></StackPanel>
@@ -875,7 +958,7 @@ try {
                                                 </StackPanel>
                                             </Border>
 
-                                            <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="10,0,0,0">
+                                            <Border Grid.Column="1" Style="{StaticResource ModernSubCard}" Margin="10,0,0,0">
                                                 <StackPanel>
                                                     <TextBlock Text="Audio &amp; Subtitles" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
                                                     <StackPanel Margin="0,0,0,10"><TextBlock Text="Audio Tracks (Multi-Track)" FontSize="13" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold" Margin="0,0,0,5"/><ComboBox x:Name="V_CAudioTracks" SelectedIndex="1"><ComboBoxItem>Default Only (Track 1)</ComboBoxItem><ComboBoxItem>Keep ALL Tracks &amp; Subs</ComboBoxItem></ComboBox></StackPanel>
@@ -885,13 +968,13 @@ try {
                                                         <StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Delay (Sec)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><TextBox x:Name="V_AudioDelay" Text="0.0"/></StackPanel>
                                                     </Grid>
                                                     <StackPanel><TextBlock Text="Burn Subtitles (.srt)" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="V_SubPath" IsReadOnly="True"/><Button x:Name="V_BtnSub" Grid.Column="1" Content="..." Width="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="5,0,0,0"/></Grid>
+                                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="V_SubPath" IsReadOnly="True"/><Button x:Name="V_BtnSub" Grid.Column="1" Content="..." Width="45" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="5,0,0,0"/></Grid>
                                                     </StackPanel>
                                                 </StackPanel>
                                             </Border>
                                         </Grid>
 
-                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15">
+                                        <Border Style="{StaticResource ModernSubCard}">
                                             <StackPanel>
                                                 <TextBlock Text="Timeline &amp; Trimming" FontWeight="Bold" Foreground="#EF4444" Margin="0,0,0,10"/>
                                                 <Grid>
@@ -905,7 +988,7 @@ try {
                                                             <StackPanel Margin="0,0,5,0"><TextBlock Text="Start" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,2"/><TextBox x:Name="V_TrimStart" Text="00:00:00"/></StackPanel>
                                                             <StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="End" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,2"/><TextBox x:Name="V_TrimEnd" Text="00:00:00"/></StackPanel>
                                                         </Grid>
-                                                        <Button x:Name="V_BtnGenPreview" Content="Generate Visual Timeline" Margin="0,15,0,0" Height="30" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand" FontWeight="Bold"/>
+                                                        <Button x:Name="V_BtnGenPreview" Content="Generate Visual Timeline" Margin="0,15,0,0" Height="38" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand" FontWeight="Bold"/>
                                                     </StackPanel>
 
                                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -927,10 +1010,10 @@ try {
 
 <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Advanced Quality"/></TabItem.Header>
-                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                <Border Style="{StaticResource ModernSubCard}">
                                     <StackPanel>
                                         
-                                        <Border Margin="10,0,10,15" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Padding="15" CornerRadius="6">
+                                        <Border Margin="10,0,10,15" Style="{StaticResource ModernSubCard}">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto"/>
@@ -957,7 +1040,7 @@ try {
                                             </Grid>
                                         </StackPanel>
 
-                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="10,0,10,15">
+                                        <Border Style="{StaticResource ModernSubCard}" Margin="10,0,10,15">
                                             <CheckBox x:Name="V_UseHandbrake" Content="Use HandBrake Engine (Best for Audio Sync, VFR, and heavy compression)" FontWeight="Bold" Foreground="#10B981" ToolTip="Uses HandBrakeCLI instead of FFmpeg. Video/Audio Copy features are disabled."/>
                                         </Border>
                                         
@@ -986,12 +1069,12 @@ try {
                 </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
                     <StackPanel>
-                        <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,15">
+                        <Border Style="{StaticResource ModernCard}">
                             <StackPanel>
-                                <TextBlock Text="Queue (Drag and Drop here)" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                                <TextBlock Text="Queue (Drag and Drop here)" FontWeight="Bold" FontSize="16" Margin="0,0,0,12"/>
                                 <Grid Margin="0,0,0,15">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
-                                    <ListBox x:Name="I_InList" Height="100" AllowDrop="True" SelectionMode="Extended">
+                                    <ListBox x:Name="I_InList" Height="110" AllowDrop="True" SelectionMode="Extended">
                                         <ListBox.ContextMenu>
                                             <ContextMenu x:Name="I_CtxMenu">
                                                 <MenuItem x:Name="I_CtxRemove" Header="Remove Selected"/>
@@ -1000,15 +1083,15 @@ try {
                                         </ListBox.ContextMenu>
                                     </ListBox>
                                     <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                        <Button x:Name="I_BtnAdd" Content="+ Files" Height="45" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="0,0,0,10"/>
-                                        <Button x:Name="I_BtnClear" Content="Clear" Height="45" Background="#EF4444" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                        <Button x:Name="I_BtnAdd" Content="+ Files" Height="50" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Margin="0,0,0,10"/>
+                                        <Button x:Name="I_BtnClear" Content="Clear" Height="50" Background="#EF4444" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                     </StackPanel>
-                                    <Button x:Name="I_BtnInfo" Grid.Column="2" Content="Info" Margin="10,0,0,0" Background="{DynamicResource MutedBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Height="45" VerticalAlignment="Top"/>
+                                    <Button x:Name="I_BtnInfo" Grid.Column="2" Content="Info" Margin="10,0,0,0" Background="{DynamicResource MutedBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" Height="50" VerticalAlignment="Top"/>
                                 </Grid>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
                                     <TextBox x:Name="I_OutDir" ToolTip="The folder where processed files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow"/>
-                                    <Button x:Name="I_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    <Button x:Name="I_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="42" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -1016,14 +1099,14 @@ try {
                         <TabControl Background="Transparent" BorderThickness="0">
                             <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Conversion"/></TabItem.Header>
-                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                <Border Style="{StaticResource ModernSubCard}">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
 
-                                        <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,0,10,0">
+                                        <Border Grid.Column="0" Style="{StaticResource ModernSubCard}" Margin="0,0,10,0">
                                             <StackPanel>
                                                 <TextBlock Text="Encoding Settings" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
                                                 <StackPanel Margin="0,0,0,10">
@@ -1048,7 +1131,7 @@ try {
                                             </StackPanel>
                                         </Border>
 
-                                        <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="10,0,0,0">
+                                        <Border Grid.Column="1" Style="{StaticResource ModernSubCard}" Margin="10,0,0,0">
                                             <StackPanel>
                                                 <TextBlock Text="Adjustments" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
                                                 <StackPanel Margin="0,0,0,15">
@@ -1077,18 +1160,18 @@ try {
                 </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
                     <StackPanel>
-                        <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20">
+                        <Border Style="{StaticResource ModernCard}">
                             <StackPanel>
                                 <TextBlock Text="Merge Video &amp; Audio without re-encoding" Foreground="{DynamicResource AccentBrush}" FontSize="18" FontWeight="Bold" Margin="0,0,0,20"/>
                                 
                                 <TextBlock Text="1. Select video without audio (Drop file here)" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                                <Grid Margin="0,0,0,20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="M_InVideo" IsReadOnly="True"/><Button x:Name="M_BtnVid" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+                                <Grid Margin="0,0,0,20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="M_InVideo" IsReadOnly="True"/><Button x:Name="M_BtnVid" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="42" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
 
                                 <TextBlock Text="2. Select audio file (Drop file here)" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                                <Grid Margin="0,0,0,20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="M_InAudio" IsReadOnly="True"/><Button x:Name="M_BtnAud" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+                                <Grid Margin="0,0,0,20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="M_InAudio" IsReadOnly="True"/><Button x:Name="M_BtnAud" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="42" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
 
                                 <TextBlock Text="3. Save target as..." FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                                <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="M_OutFile" IsReadOnly="True" /><Button x:Name="M_BtnOut" Grid.Column="1" Content="Select" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+                                <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBox x:Name="M_OutFile" IsReadOnly="True" /><Button x:Name="M_BtnOut" Grid.Column="1" Content="Select" Margin="10,0,0,0" Height="42" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -1101,26 +1184,22 @@ try {
                 </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
                     <StackPanel>
-                        <Border Background="{DynamicResource CardBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,0,0,15">
+                        <Border Style="{StaticResource ModernCard}">
                             <StackPanel>
                                 <TextBlock Text="Web Video / Audio Link (YouTube, SoundCloud, Arte, etc.)" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
                                 <TabControl x:Name="Y_InputTabs" Background="Transparent" BorderThickness="0" Margin="0,0,0,10" Padding="0">
                                     <TabItem Style="{StaticResource SubTabStyle}">
                                         <TabItem.Header><TextBlock Text="Single Link"/></TabItem.Header>
                                         <Grid Margin="0,10,0,5">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
-                                            <Grid Grid.Column="0">
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="45"/></Grid.ColumnDefinitions>
-                                                <TextBox x:Name="Y_Link" Text="https://" Height="45" Margin="0,0,5,0"/>
-                                                <Button x:Name="Y_BtnPaste" Grid.Column="1" Content="📋" ToolTip="Paste from Clipboard" Height="45" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
-                                            </Grid>
-                                            <Button x:Name="Y_BtnPreview" Grid.Column="1" Content="Fetch Video Info" Margin="10,0,0,0" Height="45" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
+                                            <TextBox x:Name="Y_Link" Grid.Column="0" Text="https://" Height="45" Cursor="IBeam"/>
+                                            <Button x:Name="Y_BtnPreview" Grid.Column="1" Content="Fetch Video Info" Margin="10,0,0,0" Height="45" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand" FontWeight="Bold"/>
                                         </Grid>
                                     </TabItem>
                                     <TabItem Style="{StaticResource SubTabStyle}">
                                         <TabItem.Header><TextBlock Text="Batch File (.txt)"/></TabItem.Header>
                                         <Grid Margin="0,10,0,5">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
                                             <TextBox x:Name="Y_BatchFile" ToolTip="Select a .txt file containing one URL per line" IsReadOnly="True" Text="Select batch text file..." Height="45" Cursor="Arrow"/>
                                             <Button x:Name="Y_BtnBatchBrowse" Grid.Column="1" Content="Browse .txt" Margin="10,0,0,0" Height="45" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                         </Grid>
@@ -1128,9 +1207,9 @@ try {
                                 </TabControl>
                                 
                                 <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
-                                    <TextBox x:Name="Y_OutDir" ToolTip="The folder where downloaded files will be saved" Text="Select target folder..." IsReadOnly="True" Cursor="Arrow"/>
-                                    <Button x:Name="Y_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="Y_OutDir" ToolTip="The folder where downloaded files will be saved" Text="Select target folder..." Height="45" IsReadOnly="True" Cursor="Arrow"/>
+                                    <Button x:Name="Y_BtnOut" Grid.Column="1" Content="Select Folder" Margin="10,0,0,0" Height="45" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -1138,14 +1217,14 @@ try {
                         <TabControl Background="Transparent" BorderThickness="0">
                             <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Format &amp; Quality"/></TabItem.Header>
-                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                <Border Style="{StaticResource ModernSubCard}">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
 
-                                        <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,0,10,0">
+                                        <Border Grid.Column="0" Style="{StaticResource ModernSubCard}" Margin="0,0,10,0">
                                             <StackPanel>
                                                 <TextBlock Text="Media Request" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
                                                 <StackPanel Margin="0,0,0,15">
@@ -1167,7 +1246,7 @@ try {
                                             </StackPanel>
                                         </Border>
 
-                                        <Border Grid.Column="1" Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="10,0,0,0">
+                                        <Border Grid.Column="1" Style="{StaticResource ModernSubCard}" Margin="10,0,0,0">
                                             <StackPanel>
                                                 <TextBlock Text="Output Containers" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
                                                 <StackPanel Margin="0,0,0,15">
@@ -1195,10 +1274,10 @@ try {
 
                             <TabItem Style="{StaticResource SubTabStyle}">
                                 <TabItem.Header><TextBlock Text="Auth &amp; Advanced"/></TabItem.Header>
-                                <Border Background="{DynamicResource BgBrush}" CornerRadius="8" Padding="20">
+                                <Border Style="{StaticResource ModernSubCard}">
                                     <StackPanel>
                                         
-                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,0,0,15">
+                                        <Border Style="{StaticResource ModernSubCard}" Margin="0,0,0,15">
                                             <StackPanel>
                                                 <TextBlock Text="Post-Processing" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
                                                 <WrapPanel>
@@ -1209,7 +1288,7 @@ try {
                                             </StackPanel>
                                         </Border>
 
-                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,0,0,15">
+                                        <Border Style="{StaticResource ModernSubCard}" Margin="0,0,0,15">
                                             <StackPanel>
                                                 <TextBlock Text="Authentication &amp; Bot Bypass" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,15"/>
                                                 
@@ -1224,7 +1303,7 @@ try {
                                                         <ComboBoxItem>brave</ComboBoxItem>
                                                     </ComboBox>
                                                     <TextBox x:Name="Y_CookiePath" Grid.Column="2" Text="" ToolTip="Path to cookies.txt (Overrides Browser)" IsReadOnly="True" Cursor="Arrow"/>
-                                                    <Button x:Name="Y_BtnCookie" Grid.Column="3" Content="Txt" Margin="10,0,0,0" Height="38" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" ToolTip="Select cookies.txt file manually"/>
+                                                    <Button x:Name="Y_BtnCookie" Grid.Column="3" Content="Txt" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand" ToolTip="Select cookies.txt file manually"/>
                                                 </Grid>
 
                                                 <Grid>
@@ -1237,7 +1316,7 @@ try {
                                             </StackPanel>
                                         </Border>
 
-                                        <Border Background="{DynamicResource CardBrush}" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15">
+                                        <Border Style="{StaticResource ModernSubCard}">
                                             <StackPanel>
                                                 <CheckBox x:Name="Y_CheckCustomParams" Content="Add custom yt-dlp params (Live Preview)" FontWeight="Bold" Margin="0,0,0,10" IsChecked="False"/>
                                                 <StackPanel x:Name="Y_CustomParamsPanel" Visibility="Collapsed">
@@ -1265,15 +1344,15 @@ try {
                     
                     <TabItem Style="{StaticResource SubTabStyle}">
                         <TabItem.Header><TextBlock Text="AI Transcriber"/></TabItem.Header>
-                        <Border Background="{DynamicResource CardBrush}" CornerRadius="8" Padding="20">
+                        <Border Style="{StaticResource ModernCard}">
                             <StackPanel>
-                                <TextBlock Text="AI Voice-to-Text (Whisper)" FontWeight="Bold" FontSize="18" Margin="0,0,0,15" Foreground="#8B5CF6"/>
+                                <TextBlock Text="AI Voice-to-Text (Whisper)" FontWeight="Bold" FontSize="18" Margin="0,0,0,15" Foreground="{DynamicResource AccentBrush}"/>
                                 
                                 <TextBlock Text="1. Input Media (Drop file here)" FontSize="13" Margin="0,5,0,5"/>
                                 <Grid Margin="0,0,0,15">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
                                     <TextBox x:Name="S_ScribeIn" IsReadOnly="True"/>
-                                    <Button x:Name="S_BtnScribeIn" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="#8B5CF6" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    <Button x:Name="S_BtnScribeIn" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="42" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                 </Grid>
                                 
                                 <Grid Margin="0,0,0,15">
@@ -1331,13 +1410,13 @@ try {
                     
                     <TabItem x:Name="TabSpecialUpscale" Style="{StaticResource SubTabStyle}">
                         <TabItem.Header><TextBlock Text="AI Upscaler"/></TabItem.Header>
-                        <Border Background="{DynamicResource CardBrush}" CornerRadius="8" Padding="20">
+                        <Border Style="{StaticResource ModernCard}">
                             <StackPanel>
                                 <TextBlock Text="AI Image Upscaling (Upscayl)" FontWeight="Bold" FontSize="18" Margin="0,0,0,15" Foreground="#10B981"/>
                                 
                                 <TextBlock Text="Select Image (Drop file here)" FontSize="13" Margin="0,5,0,5"/>
                                 <Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
-                                    <TextBox x:Name="S_UpscaleIn" IsReadOnly="True"/><Button x:Name="S_BtnUpscaleIn" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+                                    <TextBox x:Name="S_UpscaleIn" IsReadOnly="True"/><Button x:Name="S_BtnUpscaleIn" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="42" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
 
                                 <Grid Margin="0,0,0,15">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -1366,7 +1445,7 @@ try {
                                 <TextBlock Text="Output Directory (Defaults to 'special\upscaled')" FontSize="13" Margin="0,5,0,5"/>
                                 <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
                                     <TextBox x:Name="S_UpscaleOutDir" IsReadOnly="True" Cursor="Arrow" Text="Select target folder..."/>
-                                    <Button x:Name="S_BtnUpscaleOut" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    <Button x:Name="S_BtnUpscaleOut" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="42" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -1374,16 +1453,16 @@ try {
                     
                     <TabItem Style="{StaticResource SubTabStyle}">
                         <TabItem.Header><TextBlock Text="Visualizer"/></TabItem.Header>
-                        <Border Background="{DynamicResource CardBrush}" CornerRadius="8" Padding="20">
+                        <Border Style="{StaticResource ModernCard}">
                             <StackPanel>
                                 <TextBlock Text="Convert Audio to Video with Visualizer" FontWeight="Bold" FontSize="18" Margin="0,0,0,15" Foreground="{DynamicResource AccentBrush}"/>
                                 <TextBlock Text="1. Select Audio File (Drop file here)" FontSize="13" Margin="0,5,0,5"/>
                                 <Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
-                                    <TextBox x:Name="S_VisAudio" IsReadOnly="True"/><Button x:Name="S_BtnVisAud" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+                                    <TextBox x:Name="S_VisAudio" IsReadOnly="True"/><Button x:Name="S_BtnVisAud" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="42" Background="{DynamicResource AccentBrush}" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
                                 
                                 <TextBlock Text="2. Select Background Image (Drop optional file here)" FontSize="13" Margin="0,5,0,5"/>
                                 <Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
-                                    <TextBox x:Name="S_VisImg" IsReadOnly="True"/><Button x:Name="S_BtnVisImg" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+                                    <TextBox x:Name="S_VisImg" IsReadOnly="True"/><Button x:Name="S_BtnVisImg" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="42" Background="#4B5563" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
                                 
                                 <TextBlock Text="Visualizer Style" FontSize="13" Margin="0,5,0,5"/>
                                 <ComboBox x:Name="S_VisStyle" SelectedIndex="0" Margin="0,0,0,10">
@@ -1397,13 +1476,13 @@ try {
                     
                     <TabItem Style="{StaticResource SubTabStyle}">
                         <TabItem.Header><TextBlock Text="Video Stabilizer"/></TabItem.Header>
-                        <Border Background="{DynamicResource CardBrush}" CornerRadius="8" Padding="20">
+                        <Border Style="{StaticResource ModernCard}">
                             <StackPanel>
                                 <TextBlock Text="Smooth Shaky Camera Footage" FontWeight="Bold" FontSize="18" Margin="0,0,0,10" Foreground="#3B82F6"/>
                                 
                                 <TextBlock Text="Select Shaky Video (Drop file here)" FontSize="13" Margin="0,5,0,5"/>
                                 <Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
-                                    <TextBox x:Name="S_StabIn" IsReadOnly="True"/><Button x:Name="S_BtnStabIn" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="40" Background="#3B82F6" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
+                                    <TextBox x:Name="S_StabIn" IsReadOnly="True"/><Button x:Name="S_BtnStabIn" Grid.Column="1" Content="Browse" Margin="10,0,0,0" Height="42" Background="#3B82F6" Foreground="White" BorderThickness="0" Cursor="Hand"/></Grid>
 
                                 <TextBlock Text="Smoothing Level" FontSize="13" Margin="0,5,0,5"/>
                                 <ComboBox x:Name="S_StabLevel" SelectedIndex="1" Margin="0,0,0,10">
@@ -1430,16 +1509,16 @@ try {
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <Button x:Name="BtnRun" Grid.Column="0" Content="START PROCESS" Width="160" Height="45" Background="#10B981" Foreground="White" FontWeight="Bold" FontSize="15" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0" IsDefault="True"/>
-                <Button x:Name="BtnCancel" Grid.Column="1" Content="CANCEL ALL" Width="110" Height="45" Background="#EF4444" Foreground="White" FontWeight="Bold" FontSize="13" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0" IsEnabled="False"/>
-                <Button x:Name="BtnSkip" Grid.Column="2" Content="SKIP" Width="80" Height="45" Background="#F59E0B" Foreground="White" FontWeight="Bold" FontSize="13" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0" IsEnabled="False" ToolTip="Skip current file and continue queue"/>
-                <Button x:Name="BtnReset" Grid.Column="3" Content="RESET" Width="90" Height="45" Background="#6B7280" Foreground="White" FontWeight="Bold" FontSize="14" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0"/>
-                <Button x:Name="BtnShow" Grid.Column="4" Content="Open Folder" FontSize="14" Width="120" Height="45" Background="#4B5563" Foreground="White" Visibility="Collapsed" FontWeight="Bold" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0"/>
+                <Button x:Name="BtnRun" Grid.Column="0" Content="START PROCESS" Width="170" Height="48" Background="#10B981" Foreground="White" FontWeight="Black" FontSize="15" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0" IsDefault="True"/>
+                <Button x:Name="BtnCancel" Grid.Column="1" Content="CANCEL ALL" Width="110" Height="48" Background="#EF4444" Foreground="White" FontWeight="Bold" FontSize="13" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0" IsEnabled="False"/>
+                <Button x:Name="BtnSkip" Grid.Column="2" Content="SKIP" Width="80" Height="48" Background="#F59E0B" Foreground="White" FontWeight="Bold" FontSize="13" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0" IsEnabled="False" ToolTip="Skip current file and continue queue"/>
+                <Button x:Name="BtnReset" Grid.Column="3" Content="RESET" Width="90" Height="48" Background="#6B7280" Foreground="White" FontWeight="Bold" FontSize="14" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0"/>
+                <Button x:Name="BtnShow" Grid.Column="4" Content="Open Folder" FontSize="14" Width="120" Height="48" Background="#4B5563" Foreground="White" Visibility="Collapsed" FontWeight="Bold" BorderThickness="0" Cursor="Hand" Margin="0,0,15,0"/>
                 
-                <Border Grid.Column="5" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="15,0" HorizontalAlignment="Right" VerticalAlignment="Center" Height="45">
+                <Border Grid.Column="5" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="15,0" HorizontalAlignment="Right" VerticalAlignment="Center" Height="48">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <CheckBox x:Name="CbAutoScrollLog" Content="Auto-scroll Live Log" Foreground="{DynamicResource TextBrush}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" IsChecked="True" Margin="0,0,15,0"/>
-                        <ComboBox x:Name="CboPostQueue" Width="130" SelectedIndex="0" ToolTip="Action to perform when queue finishes">
+                        <ComboBox x:Name="CboPostQueue" Width="140" SelectedIndex="0" ToolTip="Action to perform when queue finishes" Height="34">
                             <ComboBoxItem>Do Nothing</ComboBoxItem>
                             <ComboBoxItem>Sleep PC</ComboBoxItem>
                             <ComboBoxItem>Shutdown PC</ComboBoxItem>
@@ -1454,13 +1533,13 @@ try {
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <ProgressBar x:Name="PBar" Grid.Column="0" Height="12" Background="{DynamicResource BorderBrush}" Foreground="{DynamicResource AccentBrush}" BorderThickness="0" Minimum="0" Maximum="100" VerticalAlignment="Center"/>
+                <ProgressBar x:Name="PBar" Grid.Column="0" Height="14" Background="{DynamicResource InputBgBrush}" Foreground="{DynamicResource AccentBrush}" BorderThickness="0" Minimum="0" Maximum="100" VerticalAlignment="Center"/>
                 <TextBlock x:Name="TxtETA" Grid.Column="1" Text="ETA: --:--" TextAlignment="Right" Margin="20,0,15,0" FontSize="14" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" FontWeight="SemiBold"/>
                 <TextBlock x:Name="StatusText" Grid.Column="2" Text="Ready." TextAlignment="Right" Margin="5,0,0,0" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
             </Grid>
 
-            <Expander x:Name="ExpLog" Header="Live Log (Errors and Details)" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource MutedBrush}" FontWeight="SemiBold" FontSize="13" Margin="0,5,0,0">
-                <TextBox x:Name="LogBox" Background="#0F172A" Foreground="#10B981" Height="150" IsReadOnly="True" VerticalScrollBarVisibility="Visible" FontFamily="Consolas" FontSize="14" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,10,0,0"/>
+            <Expander x:Name="ExpLog" Header="Live Log (Errors and Details)" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource MutedBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,5,0,0">
+                <TextBox x:Name="LogBox" Background="#0B0F19" Foreground="#10B981" Height="150" IsReadOnly="True" VerticalScrollBarVisibility="Visible" FontFamily="Consolas" FontSize="14" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Padding="15" Margin="0,10,0,0"/>
             </Expander>
         </StackPanel>
     </Grid>
@@ -1489,7 +1568,7 @@ try {
         "V_InList", "V_OutDir", "V_OutFilename", "V_CheckSmartName", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CSub", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderTrimStart", "V_SliderTrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
         "I_InList", "I_OutDir", "I_BtnAdd", "I_BtnClear", "I_BtnInfo", "I_BtnOut", "I_CFormat", "I_CQual", "I_CRes", "I_CheckMeta", "I_CtxRemove", "I_CtxClear",
         "M_InVideo", "M_InAudio", "M_OutFile", "M_BtnVid", "M_BtnAud", "M_BtnOut",
-        "Y_InputTabs", "Y_BatchFile", "Y_BtnBatchBrowse", "Y_Link", "Y_BtnPaste", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
+        "Y_InputTabs", "Y_BatchFile", "Y_BtnBatchBrowse", "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
         "TabSpecial", "SpecialSubTabs", "S_VisAudio", "S_VisImg", "S_VisStyle", "S_BtnVisAud", "S_BtnVisImg", "S_StabIn", "S_BtnStabIn", "S_StabLevel",
         "S_ScribeIn", "S_BtnScribeIn", "S_ScribeLang", "S_CheckBurn", "S_ScribeFormat", "S_ScribeModel", "S_ScribeTask",
         "TabSpecialUpscale", "S_UpscaleIn", "S_BtnUpscaleIn", "S_UpscaleModel", "S_UpscaleScale", "S_UpscaleOutDir", "S_BtnUpscaleOut",
@@ -1505,20 +1584,20 @@ try {
     function Enable-Config {
         $bc = New-Object System.Windows.Media.BrushConverter
         if ($Config.Theme -eq "Dark") {
-            $window.Resources["BgBrush"] = $bc.ConvertFromString("#0F172A")
-            $window.Resources["CardBrush"] = $bc.ConvertFromString("#1E293B")
+            $window.Resources["BgBrush"] = $bc.ConvertFromString("#0B0F19") # Deeper modern background
+            $window.Resources["CardBrush"] = $bc.ConvertFromString("#151E32") # Elevated card layer
             $window.Resources["TextBrush"] = $bc.ConvertFromString("#F8FAFC")
             $window.Resources["MutedBrush"] = $bc.ConvertFromString("#94A3B8")
-            $window.Resources["BorderBrush"] = $bc.ConvertFromString("#334155")
-            $window.Resources["InputBgBrush"] = $bc.ConvertFromString("#0F172A")
+            $window.Resources["BorderBrush"] = $bc.ConvertFromString("#2A364D")
+            $window.Resources["InputBgBrush"] = $bc.ConvertFromString("#0B0F19")
         }
         else {
             $window.Resources["BgBrush"] = $bc.ConvertFromString("#F3F4F6")
             $window.Resources["CardBrush"] = $bc.ConvertFromString("#FFFFFF")
-            $window.Resources["TextBrush"] = $bc.ConvertFromString("#1F2937")
+            $window.Resources["TextBrush"] = $bc.ConvertFromString("#111827")
             $window.Resources["MutedBrush"] = $bc.ConvertFromString("#6B7280")
-            $window.Resources["BorderBrush"] = $bc.ConvertFromString("#D1D5DB")
-            $window.Resources["InputBgBrush"] = $bc.ConvertFromString("#FFFFFF")
+            $window.Resources["BorderBrush"] = $bc.ConvertFromString("#E5E7EB")
+            $window.Resources["InputBgBrush"] = $bc.ConvertFromString("#F9FAFB")
         }
         
         $window.Topmost = [bool]$Config.AlwaysOnTop
@@ -3419,18 +3498,6 @@ $BtnSettings.Add_Click({
 
     $Y_Link.Add_GotKeyboardFocus({ if ($Y_Link.Text -eq "https://") { $Y_Link.Text = "" } })
     $Y_Link.Add_LostKeyboardFocus({ if ([string]::IsNullOrWhiteSpace($Y_Link.Text)) { $Y_Link.Text = "https://" } })
-    
-    $Y_BtnPaste.Add_Click({
-        if ([System.Windows.Clipboard]::ContainsText()) {
-            $clip = [System.Windows.Clipboard]::GetText().Trim()
-            if ($clip -match "^(https?://|www\.)") {
-                $Y_Link.Text = $clip
-                Update-YtDlpPreview
-            } else {
-                [void][System.Windows.MessageBox]::Show("Clipboard does not contain a valid URL.", "Invalid Paste", 0, 48)
-            }
-        }
-    })
     
     $BtnLogs.Add_Click({
         if (Test-Path $LogDir) { [void](Start-Process "explorer.exe" -ArgumentList "`"$LogDir`"") }
