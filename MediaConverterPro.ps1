@@ -39,11 +39,7 @@ namespace WinApi {
         [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
         public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
     }
-
-    public class ShellDetect {
-        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-        public static extern uint FindExecutable(string lpFile, string lpDirectory, [Out] StringBuilder lpResult);
-    }
+        
 }
 '@
 
@@ -2484,23 +2480,19 @@ try {
     $Y_Type.SelectedIndex = 0
 
     # --- Bulletproof Auto-Detect Default Browser ---
-    # --- Bulletproof Auto-Detect Default Browser ---
     try {
-        $tempFile = Join-Path $env:TEMP "mcp_browser_detect.html"
-        "<html></html>" | Out-File -FilePath $tempFile -Encoding utf8 -Force
-        
-        $outBuf = New-Object System.Text.StringBuilder 1024
-        [void][WinApi.ShellDetect]::FindExecutable($tempFile, $null, $outBuf)
-        $realPath = $outBuf.ToString().ToLower()
-        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        # Read the true default browser from the Windows UserChoice protocol registry (Windows 10/11 standard)
+        $regPath = "HKCU:\SOFTWARE\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice"
+        $progId = (Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue).ProgId
 
-        if ($realPath -match "chrome") { $Y_CookieBrowser.SelectedIndex = 1 }
-        elseif ($realPath -match "firefox") { $Y_CookieBrowser.SelectedIndex = 2 }
-        elseif ($realPath -match "opera") { $Y_CookieBrowser.SelectedIndex = 3 }
-        elseif ($realPath -match "brave") { $Y_CookieBrowser.SelectedIndex = 4 }
+        if ([string]::IsNullOrWhiteSpace($progId)) {
+            $Y_CookieBrowser.SelectedIndex = 0 # Fallback to Edge
+        }
+        elseif ($progId -match "(?i)chrome") { $Y_CookieBrowser.SelectedIndex = 1 }
+        elseif ($progId -match "(?i)firefox") { $Y_CookieBrowser.SelectedIndex = 2 }
+        elseif ($progId -match "(?i)opera") { $Y_CookieBrowser.SelectedIndex = 3 }
+        elseif ($progId -match "(?i)brave") { $Y_CookieBrowser.SelectedIndex = 4 }
         else { $Y_CookieBrowser.SelectedIndex = 0 } # Fallback to Edge
-        
-        # Note: Logging removed from here to prevent it from showing at startup
     }
     catch {
         $Y_CookieBrowser.SelectedIndex = 0
