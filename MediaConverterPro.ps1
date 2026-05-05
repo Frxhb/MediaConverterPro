@@ -3821,7 +3821,7 @@ $BtnSettings.Add_Click({
                         $reader = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
                         
                         if ($script:State.lastLogPos -lt $reader.BaseStream.Length) {
-                            $reader.BaseStream.Seek($script:State.lastLogPos, [System.IO.SeekOrigin]::Begin) | Out-Null
+                            [void]$reader.BaseStream.Seek($script:State.lastLogPos, [System.IO.SeekOrigin]::Begin)
                             $newText = $reader.ReadToEnd()
                             $script:State.lastLogPos = $reader.BaseStream.Position
                         }
