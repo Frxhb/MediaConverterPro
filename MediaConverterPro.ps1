@@ -3143,9 +3143,9 @@ $BtnSettings.Add_Click({
                 # Phase 2: Wait for all extractions to complete simultaneously WITHOUT freezing the UI
                 foreach ($p in $procs) { 
                     $timeout = (Get-Date).AddSeconds(15)
-                    while (-not $p.HasExited) {
+                    # WaitForExit(20) acts as the delay, but yields IMMEDIATELY if the process finishes early
+                    while (-not $p.WaitForExit(20)) {
                         $window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
-                        Start-Sleep -Milliseconds 20
                         if ((Get-Date) -gt $timeout) { try { $p.Kill() } catch {}; break }
                     }
                     $p.Dispose() 
