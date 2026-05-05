@@ -3769,11 +3769,11 @@ $BtnSettings.Add_Click({
             }
 
             # 4. Build Clean Arguments
-            $rawArgs = @()
+            $rawArgs = [System.Collections.Generic.List[string]]::new()
             if (-not $job.IsYtDlp -and $job.CustomTool -notmatch "python.exe|upscayl") {
-                if ($Config.ThreadLimit -and $Config.ThreadLimit -ne "Auto") { $rawArgs += @("-threads", $Config.ThreadLimit) }
+                if ($Config.ThreadLimit -and $Config.ThreadLimit -ne "Auto") { $rawArgs.AddRange(@("-threads", $Config.ThreadLimit)) }
             }
-            foreach ($arg in $job.Args) { $rawArgs += $arg.ToString().Trim() }
+            foreach ($arg in $job.Args) { $rawArgs.Add($arg.ToString().Trim()) }
             
             $argString = ($rawArgs | ForEach-Object {
                 $a = [string]$_
