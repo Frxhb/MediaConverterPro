@@ -3770,11 +3770,13 @@ $BtnSettings.Add_Click({
             }
             foreach ($arg in $job.Args) { $rawArgs.Add($arg.ToString().Trim()) }
             
-            $argString = ($rawArgs | ForEach-Object {
-                $a = [string]$_
+            $escapedArgs = [System.Collections.Generic.List[string]]::new()
+            foreach ($a in $rawArgs) {
+                $strA = [string]$a
                 # Robustly quote arguments and escape existing quotes to prevent command injection
-                if ($a -match '[ &|<>]') { "`"$($a -replace '"', '\"')`"" } else { $a }
-            }) -join " "
+                if ($strA -match '[ &|<>]') { $escapedArgs.Add("`"$($strA -replace '"', '\"')`"") } else { $escapedArgs.Add($strA) }
+            }
+            $argString = $escapedArgs -join " "
 
             # 5. UI PUMP (Clears spinning icon natively without WinForms leaks)
             $window.Cursor = [System.Windows.Input.Cursors]::Arrow
