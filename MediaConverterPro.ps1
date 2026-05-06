@@ -2506,11 +2506,19 @@ try {
     $Y_Type.SelectedIndex = -1
     $Y_Type.SelectedIndex = 0
 
-    # --- Bulletproof Auto-Detect Default Browser ---
+# --- Bulletproof Auto-Detect Default Browser ---
     try {
-        # Read the true default browser from the Windows UserChoice protocol registry (Windows 10/11 standard)
-        $regPath = "HKCU:\SOFTWARE\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice"
-        $progId = (Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue).ProgId
+        # Use native .NET Registry API to bypass PSDrive runspace/thread issues
+        $progId = $null
+        $regKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("SOFTWARE\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice")
+        
+        if ($null -ne $regKey) {
+            $progId = $regKey.GetValue("ProgId")
+            $regKey.Close()
+        }
+
+        # Print what the system actually pulled to the Live Log for debugging
+        #$LogBox.AppendText("[DEBUG] Registry ProgId detected: '$progId'`r`n")
 
         if ([string]::IsNullOrWhiteSpace($progId)) {
             $Y_CookieBrowser.SelectedIndex = 0 # Fallback to Edge
@@ -2523,11 +2531,11 @@ try {
     }
     catch {
         $Y_CookieBrowser.SelectedIndex = 0
+        $LogBox.AppendText("[DEBUG] Browser detection crashed: $($_.Exception.Message)`r`n")
     }
     $script:State | Add-Member -MemberType NoteProperty -Name "BrowserLogged" -Value $false
     
     #default to using cookies from browser with auto-detection, but allow user to uncheck if they want
-    #$Y_CheckCookie.IsChecked = $true
     $Y_CheckCookie.IsChecked = $false
     # -----------------------------------------------
 
