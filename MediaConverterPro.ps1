@@ -406,15 +406,16 @@ try {
     # ==============================================================================
     
     # Load configuration from JSON or define defaults as a proper PSCustomObject
-    $DefaultConfig = [PSCustomObject]@{ Theme = "Light"; WhisperModel = "base"; PlaySound = $true; AlwaysOnTop = $false; ThreadLimit = "Auto"; DefaultOutDir = ""; AutoDelete = $false }
+    $DefaultConfig = [PSCustomObject]@{ Theme = "Light"; WhisperModel = "base"; PlaySound = $true; AlwaysOnTop = $false; ThreadLimit = "Auto"; Priority = "Below Normal"; DefaultOutDir = ""; AutoDelete = $false }
     if (Test-Path $ConfigFile) { try { $Config = Get-Content $ConfigFile -Raw | ConvertFrom-Json } catch { $Config = $DefaultConfig } } else { $Config = $DefaultConfig }
-    
+        
     # Ensure ALL required UI properties exist (repairs the file if Find-Tools created it first)
     if ($null -eq $Config.Theme) { $Config | Add-Member -MemberType NoteProperty -Name "Theme" -Value "Light" }
     if ($null -eq $Config.WhisperModel) { $Config | Add-Member -MemberType NoteProperty -Name "WhisperModel" -Value "base" }
     if ($null -eq $Config.PlaySound) { $Config | Add-Member -MemberType NoteProperty -Name "PlaySound" -Value $true }
     if ($null -eq $Config.AlwaysOnTop) { $Config | Add-Member -MemberType NoteProperty -Name "AlwaysOnTop" -Value $false }
     if ($null -eq $Config.ThreadLimit) { $Config | Add-Member -MemberType NoteProperty -Name "ThreadLimit" -Value "Auto" }
+    if ($null -eq $Config.Priority) { $Config | Add-Member -MemberType NoteProperty -Name "Priority" -Value "Below Normal" }
     if ($null -eq $Config.DefaultOutDir) { $Config | Add-Member -MemberType NoteProperty -Name "DefaultOutDir" -Value "" }
     if ($null -eq $Config.AutoDelete) { $Config | Add-Member -MemberType NoteProperty -Name "AutoDelete" -Value $false }
 
@@ -724,7 +725,8 @@ try {
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
                 <Button x:Name="BtnLogs" Content="Logs" Width="75" Height="42" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" Margin="0,0,10,0" ToolTip="Open Log Folder"/>
                 <Button x:Name="BtnUpdate" Content="Update Tools" Width="115" Height="42" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" Margin="0,0,10,0" ToolTip="Update Dependencies"/>
-                <Button x:Name="BtnSettings" Content="Settings" Width="95" Height="42" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" ToolTip="Settings"/>
+                <Button x:Name="BtnSettings" Content="Settings" Width="95" Height="42" FontSize="14" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Cursor="Hand" Margin="0,0,10,0" ToolTip="Settings"/>
+                <Button x:Name="BtnExit" Content="Exit" Width="75" Height="42" FontSize="14" Background="#EF4444" Foreground="White" BorderThickness="0" Cursor="Hand" ToolTip="Quit Application"/>
             </StackPanel>
         </Grid>
         
@@ -1572,7 +1574,7 @@ try {
     # Find and map all XAML UI elements to their corresponding PowerShell variables
     $UIElements = @(
         "TaskbarProgress",
-        "CboPostQueue", "MainTabs", "BtnRun", "BtnShow", "BtnSettings", "BtnLogs", "BtnUpdate", "BtnCancel", "BtnSkip", "BtnReset", "StatusText", "TxtETA", "PBar", "LogBox", "CbAutoScrollLog", "TxtSubtitle",
+        "CboPostQueue", "MainTabs", "BtnRun", "BtnShow", "BtnSettings", "BtnLogs", "BtnUpdate", "BtnExit", "BtnCancel", "BtnSkip", "BtnReset", "StatusText", "TxtETA", "PBar", "LogBox", "CbAutoScrollLog", "TxtSubtitle",
         "TabAudio", "TabVideo", "TabImage", "TabMuxing", "TabDownload", "ExpLog",
         "A_InList", "A_OutDir", "A_BtnAdd", "A_BtnClear", "A_BtnInfo", "A_BtnOut", "A_CFormat", "A_CQual", "A_CChan", "A_CMeta", "A_CheckNorm", "A_TrimStart", "A_TrimEnd", "A_SliderTrimStart", "A_SliderTrimEnd", "A_CheckExtract", "A_CtxRemove", "A_CtxClear", "A_CheckCustomParams", "A_CustomParamsPanel", "A_ParamsPreview", "A_CustomParams",
         "V_InList", "V_OutDir", "V_OutFilename", "V_CheckSmartName", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CSub", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderTrimStart", "V_SliderTrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
@@ -2808,6 +2810,14 @@ $BtnSettings.Add_Click({
         <ComboBox x:Name="CboThreads">
             </ComboBox>
 
+        <TextBlock Text="Process Priority" ToolTip="Lower priority keeps your PC smooth while encoding in the background."/>
+        <ComboBox x:Name="CboPriority">
+            <ComboBoxItem>Normal</ComboBoxItem>
+            <ComboBoxItem>Below Normal (Recommended)</ComboBoxItem>
+            <ComboBoxItem>Idle (Background only)</ComboBoxItem>
+            <ComboBoxItem>High (Faster, but locks PC)</ComboBoxItem>
+        </ComboBox>
+
         <TextBlock Text="Global Default Output Directory" ToolTip="Leave empty to output in the script's folder."/>
         <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
@@ -2884,6 +2894,7 @@ $BtnSettings.Add_Click({
                     $Config.PlaySound = [bool]$setWin.FindName("ChkPlaySound").IsChecked
                     $Config.AlwaysOnTop = [bool]$setWin.FindName("ChkAlwaysOnTop").IsChecked
                     $Config.AutoDelete = [bool]$setWin.FindName("ChkAutoDelete").IsChecked
+                    $Config.Priority = (Get-CbVal $cboPriority).Split(" ")[0] + $(if ((Get-CbVal $cboPriority) -match "Below Normal") {" Normal"} else {""})
                     
                     $Config | ConvertTo-Json -Depth 10 | Set-Content $ConfigFile -Encoding UTF8 #UTF8 to preserve any special chars in paths
                     Enable-Config
@@ -3523,6 +3534,11 @@ $BtnSettings.Add_Click({
         if (Test-Path $LogDir) { [void](Start-Process "explorer.exe" -ArgumentList "`"$LogDir`"") }
     })
 
+    $BtnExit.Add_Click({
+        $script:ForceClose = $true
+        $window.Close()
+    })
+
     # Validates if an inputted URL is supported by yt-dlp by referencing the markdown from GitHub
     function CheckYtDlpSupport([string]$link) {
         $isValidUrl = $false
@@ -3889,6 +3905,28 @@ $BtnSettings.Add_Click({
 
             $script:State.p = [System.Diagnostics.Process]::Start($psi)
             if ($null -eq $script:State.p) { throw "Process failed to start." }
+            
+            try {
+                # Map user config to actual System.Diagnostics.ProcessPriorityClass enum
+                $pri = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+                if ($Config.Priority -match "Idle") { $pri = [System.Diagnostics.ProcessPriorityClass]::Idle }
+                elseif ($Config.Priority -match "High") { $pri = [System.Diagnostics.ProcessPriorityClass]::High }
+                elseif ($Config.Priority -eq "Normal") { $pri = [System.Diagnostics.ProcessPriorityClass]::Normal }
+                
+                $script:State.p.PriorityClass = $pri
+                
+                # Also dynamically lower the priority of the child process (FFmpeg/Handbrake) spawned by cmd.exe
+                [void][System.Threading.Tasks.Task]::Run([Action]{
+                    Start-Sleep -Seconds 1
+                    try {
+                        $children = Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $script:State.p.Id }
+                        foreach ($child in $children) {
+                            $cp = [System.Diagnostics.Process]::GetProcessById($child.ProcessId)
+                            $cp.PriorityClass = $pri
+                        }
+                    } catch {}
+                })
+            } catch {}
 
             $timer.Start()
         }
