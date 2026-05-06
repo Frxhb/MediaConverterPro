@@ -1743,21 +1743,31 @@ try {
         
                     MissingToolsCheck 
 
-                    # Dynamic Hardware Acceleration Detection (Fixed API vs Encoder detection)
+                    # Dynamic Hardware Acceleration Detection (System GPU + FFmpeg capability)
                     if ($script:State.ffmpegFound) {
                         try {
                             $hwOut = & $script:State.ffmpeg -encoders 2>&1 | Out-String
-                            if ($hwOut -notmatch "nvenc") { 
+                            
+                            # System GPU Check (Uses native CIM Instance to find physical hardware)
+                            $gpuCheck = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+                            $hasNvidia = ($gpuCheck -match "(?i)NVIDIA") -ne $null
+                            $hasAMD = ($gpuCheck -match "(?i)AMD|Radeon") -ne $null
+                            $hasIntel = ($gpuCheck -match "(?i)Intel") -ne $null
+
+                            if (-not $hasNvidia -or $hwOut -notmatch "nvenc") { 
                                 ($V_CHWAccel.Items[1] -as [System.Windows.Controls.ComboBoxItem]).IsEnabled = $false
-                                ($V_CHWAccel.Items[1] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = "NVIDIA GPU support not detected."
+                                $reason = if (-not $hasNvidia) { "NVIDIA GPU not found in system." } else { "FFmpeg build lacks NVENC support." }
+                                ($V_CHWAccel.Items[1] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = $reason
                             }
-                            if ($hwOut -notmatch "amf") { 
+                            if (-not $hasAMD -or $hwOut -notmatch "amf") { 
                                 ($V_CHWAccel.Items[2] -as [System.Windows.Controls.ComboBoxItem]).IsEnabled = $false
-                                ($V_CHWAccel.Items[2] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = "AMD GPU support not detected."
+                                $reason = if (-not $hasAMD) { "AMD GPU not found in system." } else { "FFmpeg build lacks AMF support." }
+                                ($V_CHWAccel.Items[2] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = $reason
                             }
-                            if ($hwOut -notmatch "qsv") { 
+                            if (-not $hasIntel -or $hwOut -notmatch "qsv") { 
                                 ($V_CHWAccel.Items[3] -as [System.Windows.Controls.ComboBoxItem]).IsEnabled = $false
-                                ($V_CHWAccel.Items[3] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = "Intel GPU support not detected."
+                                $reason = if (-not $hasIntel) { "Intel GPU not found in system." } else { "FFmpeg build lacks QSV support." }
+                                ($V_CHWAccel.Items[3] -as [System.Windows.Controls.ComboBoxItem]).ToolTip = $reason
                             }
                         }
                         catch {
