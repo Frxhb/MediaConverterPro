@@ -38,8 +38,7 @@ namespace WinApi {
     public class PathHelper {
         [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
         public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
-    }
-        
+    }    
 }
 '@
 
@@ -1200,6 +1199,21 @@ try {
                                             <Button x:Name="Y_BtnBatchBrowse" Grid.Column="1" Content="Browse .txt" Margin="10,0,0,0" Height="45" Background="#10B981" Foreground="White" BorderThickness="0" Cursor="Hand"/>
                                         </Grid>
                                     </TabItem>
+                                    <TabItem Style="{StaticResource SubTabStyle}">
+                                        <TabItem.Header><TextBlock Text="Live Stream Record"/></TabItem.Header>
+                                        <StackPanel Margin="0,10,0,5">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="200"/></Grid.ColumnDefinitions>
+                                                <TextBox x:Name="L_StreamUrl" Grid.Column="0" ToolTip="Twitch, YouTube Live, or raw M3U8/RTMP" Text="https://" Height="45" Cursor="IBeam"/>
+                                                <ComboBox x:Name="L_Format" Grid.Column="1" SelectedIndex="0" Margin="10,0,0,0" Height="45" ToolTip="Output Container">
+                                                    <ComboBoxItem>MKV (Crash Resilient)</ComboBoxItem>
+                                                    <ComboBoxItem>MP4 (Compatibility)</ComboBoxItem>
+                                                    <ComboBoxItem>TS (Raw Stream)</ComboBoxItem>
+                                                </ComboBox>
+                                            </Grid>
+                                            <TextBlock Text="Notice: Live streams will record continuously until you click 'CANCEL ALL'." Foreground="{DynamicResource MutedBrush}" FontStyle="Italic" FontSize="13" Margin="0,10,0,0"/>
+                                        </StackPanel>
+                                    </TabItem>
                                 </TabControl>
                                 
                                 <Grid>
@@ -1568,7 +1582,8 @@ try {
         "TabSpecial", "SpecialSubTabs", "S_VisAudio", "S_VisImg", "S_VisStyle", "S_BtnVisAud", "S_BtnVisImg", "S_StabIn", "S_BtnStabIn", "S_StabLevel",
         "S_ScribeIn", "S_BtnScribeIn", "S_ScribeLang", "S_CheckBurn", "S_ScribeFormat", "S_ScribeModel", "S_ScribeTask",
         "TabSpecialUpscale", "S_UpscaleIn", "S_BtnUpscaleIn", "S_UpscaleModel", "S_UpscaleScale", "S_UpscaleOutDir", "S_BtnUpscaleOut",
-        "V_UseHandbrake"
+        "V_UseHandbrake",
+        "TabLive", "L_StreamUrl", "L_Format"
     )
     foreach ($element in $UIElements) { Set-Variable -Name $element -Value $window.FindName($element) -Scope Script }
 
@@ -3274,7 +3289,7 @@ $BtnSettings.Add_Click({
     $BtnShow.Add_Click({ 
             $dir = $script:State.lastOutDir
             if (-not [string]::IsNullOrWhiteSpace($dir) -and (Test-Path -LiteralPath $dir)) { 
-                [void](Start-Process "explorer.exe" -ArgumentList "`"$dir`"")
+                Invoke-Item -LiteralPath $dir
             } 
         })
 
@@ -3490,6 +3505,9 @@ $BtnSettings.Add_Click({
 
     $Y_Link.Add_GotKeyboardFocus({ if ($Y_Link.Text -eq "https://") { $Y_Link.Text = "" } })
     $Y_Link.Add_LostKeyboardFocus({ if ([string]::IsNullOrWhiteSpace($Y_Link.Text)) { $Y_Link.Text = "https://" } })
+    
+    $L_StreamUrl.Add_GotKeyboardFocus({ if ($L_StreamUrl.Text -eq "https://") { $L_StreamUrl.Text = "" } })
+    $L_StreamUrl.Add_LostKeyboardFocus({ if ([string]::IsNullOrWhiteSpace($L_StreamUrl.Text)) { $L_StreamUrl.Text = "https://" } })
     
     $BtnLogs.Add_Click({
         if (Test-Path $LogDir) { [void](Start-Process "explorer.exe" -ArgumentList "`"$LogDir`"") }
@@ -4128,14 +4146,21 @@ $BtnSettings.Add_Click({
                         $LogBox.AppendText("`r`n[ERROR] No valid media could be found to download. The site might not contain an extractable video/audio.`r`n")
                         $exCode = 1
                     }
-                    elseif ($exCode -ne 0) {
+                    elseif ($exCode -ne 0 -and -not $job.IsYtDlp) {
                         $StatusText.Text = "Finished (With minor warnings)."
                         $StatusText.Foreground = "#F59E0B"
                         $LogBox.AppendText("`r`n[WARNING] Completed, but some post-processing (e.g. metadata/thumbnail) had issues.`r`n")
                     }
-                    else {
-                        $StatusText.Text = "Finished Successfully."
-                        $StatusText.Foreground = "#10B981"
+                    
+                    # Ensure yt-dlp captures are finalized even if forcefully skipped/cancelled mid-stream
+                    if ($exCode -eq 0 -or $job.IsYtDlp) {
+                        if ($exCode -eq 0) {
+                            $StatusText.Text = "Finished Successfully."
+                            $StatusText.Foreground = "#10B981"
+                        } else {
+                            $StatusText.Text = "Capture Stopped."
+                            $StatusText.Foreground = "#F59E0B"
+                        }
 
                         if ($job.IsYtDlp) {
                             try {
@@ -4228,7 +4253,9 @@ $BtnSettings.Add_Click({
                     }
                 }
 
-                if ($exCode -ne 0 -and $job.OutputFile -and (Test-Path -LiteralPath $job.OutputFile)) {
+                # Safety: Only delete failed outputs if they aren't Live Captures. 
+                # Live Captures (IsYtDlp) are almost always "incomplete" by exit-code standards but are actually valid.
+                if ($exCode -ne 0 -and $job.OutputFile -and (Test-Path -LiteralPath $job.OutputFile) -and -not $job.IsYtDlp) {
                     Remove-Item -LiteralPath $job.OutputFile -Force -ErrorAction SilentlyContinue
                     $LogBox.AppendText("`r`n[CLEANUP] Deleted incomplete output file: $(Split-Path $job.OutputFile -Leaf)`r`n")
                 }
@@ -4335,6 +4362,48 @@ $BtnSettings.Add_Click({
                 if (-not $script:State.ytdlpFound) { 
                     [void][System.Windows.MessageBox]::Show("yt-dlp.exe not found!", "Missing Tool", 0, 48)
                     return 
+                }
+
+                # LIVE STREAM LOGIC (Sub-Tab 2)
+                if ($Y_InputTabs.SelectedIndex -eq 2) {
+                    $url = $L_StreamUrl.Text.Trim()
+                    if ([string]::IsNullOrWhiteSpace($url) -or $url -eq "https://") {
+                        [void][System.Windows.MessageBox]::Show("Please enter a valid Twitch, YouTube, or M3U8 link.", "No Input", 0, 48)
+                        return
+                    }
+
+                    $baseOut = $Y_OutDir.Text
+                    if ($baseOut -match "Select target" -or [string]::IsNullOrWhiteSpace($baseOut)) { 
+                        $outDir = Join-Path $ScriptDir "download\streams"
+                    } else {
+                        $outDir = $baseOut
+                    }
+                    if (-not (Test-Path $outDir)) { [void](New-Item -ItemType Directory -Path $outDir -Force) }
+                    $script:State.lastOutDir = $outDir
+                    
+                    $ts = Get-Date -Format 'yyyyMMdd_HHmmss'
+                    $fmtCb = Get-CbVal $L_Format
+                    $ext = if ($fmtCb -match "MP4") { "mp4" } elseif ($fmtCb -match "TS") { "ts" } else { "mkv" }
+                    $outFile = Join-Path $outDir "LiveCapture_$ts.$ext"
+                    
+                    $argsArray = @("--ffmpeg-location", $script:State.ffmpeg, "--hls-use-mpegts", "--no-part")
+                    if ($ext -ne "ts") { $argsArray += @("--merge-output-format", $ext) }
+                    $argsArray += @("-o", $outFile, $url)
+
+                    $script:State.BatchQueue.Add(@{ 
+                        Args = $argsArray; SafeArgs = $argsArray; HasCustomParams = $false; 
+                        Retried = $false; IsYtDlp = $true; IsWhisper = $false; CustomTool = ""; 
+                        OutputDir = $outDir; InputFile = $url; OutputFile = $outFile; 
+                        ListBox = $null; ListItem = $null 
+                    })
+                    
+                    $BtnRun.IsEnabled = $false
+                    $BtnUpdate.IsEnabled = $false
+                    $BtnCancel.IsEnabled = $true
+                    $BtnSkip.IsEnabled = $true
+                    $script:State.CurrentJobIndex = 0
+                    ProcessNextJob
+                    return
                 }
 
                 $linksToProcess = [System.Collections.Generic.List[string]]::new()
