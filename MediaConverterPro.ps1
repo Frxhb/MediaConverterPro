@@ -3891,6 +3891,7 @@ $BtnSettings.Add_Click({
     }
     # Routine logic for polling output file of cmd wrapper and translating string matches to progress bar
     $timer.Add_Tick({
+            $timer.Stop() # Prevent overlapping ticks if regex parsing takes longer than 250ms on slow PCs
             if (Test-Path -LiteralPath $script:State.tempLog) {
                 try {
                     $newText = ""
@@ -3915,10 +3916,11 @@ $BtnSettings.Add_Click({
                         $LogBox.AppendText($newText)
                         
                         # Prevent memory leaks and UI freezing during massive FFmpeg/yt-dlp logs
-                        # Using BeginChange/EndChange prevents visual stuttering during text manipulations
-                        if ($LogBox.Text.Length -gt 20000) {
+                        # Selecting and clearing text is 100x faster in WPF than overwriting the .Text property
+                        if ($LogBox.Text.Length -gt 25000) {
                             $LogBox.BeginChange()
-                            $LogBox.Text = $LogBox.Text.Substring($LogBox.Text.Length - 10000)
+                            $LogBox.Select(0, 10000)
+                            $LogBox.SelectedText = "...[TRUNCATED TO SAVE MEMORY]...`r`n"
                             $LogBox.EndChange()
                         }
 
@@ -4278,6 +4280,7 @@ $BtnSettings.Add_Click({
                 $script:State.CurrentJobIndex++
                 [void][System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeAsync({ ProcessNextJob })
             }
+            if ($script:State.p -and -not $script:State.p.HasExited) { $timer.Start() }
         })
 
     # Main entry point when the user clicks 'START PROCESS'. Parses inputs, creates jobs, and starts the queue.
