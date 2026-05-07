@@ -24,4 +24,6 @@
 *heic
 *.webp
 *.tmp
+.venv
+*py*
 MediaConverterPro.exe
