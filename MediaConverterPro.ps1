@@ -1296,6 +1296,7 @@ try {
                                                     <CheckBox x:Name="Y_CheckMeta" Content="Embed Metadata &amp; Thumbnail" Margin="0,0,20,10" IsChecked="False"/>
                                                     <CheckBox x:Name="Y_CheckSubs" Content="Embed Subtitles" Margin="0,0,20,10"/>
                                                     <CheckBox x:Name="Y_CheckSponsor" Content="SponsorBlock (Skip Sponsors)" Margin="0,0,20,10"/>
+                                                    <CheckBox x:Name="Y_CheckResume" Content="Skip Existing (Resume Playlist/Archive)" Margin="0,0,20,10" IsChecked="True" ToolTip="Skips already downloaded videos and uses an archive file for playlists."/>
                                                 </WrapPanel>
                                             </StackPanel>
                                         </Border>
@@ -1580,7 +1581,7 @@ try {
         "V_InList", "V_OutDir", "V_OutFilename", "V_CheckSmartName", "V_BtnAdd", "V_BtnClear", "V_BtnInfo", "V_BtnOut", "V_Preset", "V_BtnSavePreset", "V_CFormat", "V_CCodec", "V_CAudio", "V_CSub", "V_CRes", "V_CFPS", "V_CVol", "V_CSpeed", "V_AudioDelay", "V_CHWAccel", "V_TrimStart", "V_TrimEnd", "V_SliderTrimStart", "V_SliderTrimEnd", "V_SliderCRF", "V_CRFText", "V_CRFDesc", "V_SubPath", "V_BtnSub", "V_CAudioTracks", "V_CheckTargetSize", "V_TargetSizeMB", "V_CtxRemove", "V_CtxClear", "V_CheckCustomParams", "V_CustomParamsPanel", "V_ParamsPreview", "V_CustomParams", "V_BtnGenPreview", "V_PreviewScroll", "V_PreviewStack",
         "I_InList", "I_OutDir", "I_BtnAdd", "I_BtnClear", "I_BtnInfo", "I_BtnOut", "I_CFormat", "I_CQual", "I_CRes", "I_CheckMeta", "I_CtxRemove", "I_CtxClear",
         "M_InVideo", "M_InAudio", "M_OutFile", "M_BtnVid", "M_BtnAud", "M_BtnOut",
-        "Y_InputTabs", "Y_BatchFile", "Y_BtnBatchBrowse", "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
+        "Y_InputTabs", "Y_BatchFile", "Y_BtnBatchBrowse", "Y_Link", "Y_BtnPreview", "Y_OutDir", "Y_BtnOut", "Y_Type", "Y_Res", "Y_VFormat", "Y_AFormat", "Y_CheckMeta", "Y_CheckSubs", "Y_CheckSponsor", "Y_CheckResume", "Y_CheckCustomParams", "Y_CustomParamsPanel", "Y_CustomParams", "Y_ParamsPreview", "Y_CheckCookie", "Y_CookiePath", "Y_BtnCookie", "Y_CookieBrowser", "Y_PoToken", "Y_CheckAutoPoToken",
         "TabSpecial", "SpecialSubTabs", "S_VisAudio", "S_VisImg", "S_VisStyle", "S_BtnVisAud", "S_BtnVisImg", "S_StabIn", "S_BtnStabIn", "S_StabLevel",
         "S_ScribeIn", "S_BtnScribeIn", "S_ScribeLang", "S_CheckBurn", "S_ScribeFormat", "S_ScribeModel", "S_ScribeTask",
         "TabSpecialUpscale", "S_UpscaleIn", "S_BtnUpscaleIn", "S_UpscaleModel", "S_UpscaleScale", "S_UpscaleOutDir", "S_BtnUpscaleOut",
@@ -1923,9 +1924,19 @@ try {
                 "--js-runtime", "node",
                 "--remote-components", "ejs:github",
                 "--extractor-args", $extArgs,
-                "--force-overwrites",
-                "--no-colors"
+                "--no-colors",
+                "--ignore-errors",
+                "--retries", "10",
+                "--fragment-retries", "10",
+                "--retry-sleep", "5"
             ))
+
+        if ($Y_CheckResume -and $Y_CheckResume.IsChecked) {
+            $archivePath = Join-Path $outDir "download_archive.txt"
+            $argList.AddRange([string[]]@("--no-overwrites", "--continue", "--download-archive", "`"$archivePath`""))
+        } else {
+            $argList.Add("--force-overwrites")
+        }
 
         $resCb = Get-CbVal $Y_Res
         if ($Y_Type.SelectedIndex -eq 1) { 
@@ -2546,6 +2557,7 @@ try {
     $Y_CheckMeta.Add_Checked({ Update-YtDlpPreview }); $Y_CheckMeta.Add_Unchecked({ Update-YtDlpPreview })
     $Y_CheckSubs.Add_Checked({ Update-YtDlpPreview }); $Y_CheckSubs.Add_Unchecked({ Update-YtDlpPreview })
     $Y_CheckSponsor.Add_Checked({ Update-YtDlpPreview }); $Y_CheckSponsor.Add_Unchecked({ Update-YtDlpPreview })
+    $Y_CheckResume.Add_Checked({ Update-YtDlpPreview }); $Y_CheckResume.Add_Unchecked({ Update-YtDlpPreview })
     $Y_CheckCookie.Add_Checked({ Update-YtDlpPreview }); $Y_CheckCookie.Add_Unchecked({ Update-YtDlpPreview })
     $Y_CheckAutoPoToken.Add_Checked({ $Y_PoToken.IsEnabled = $false; $Y_PoToken.Opacity = 0.4; Update-YtDlpPreview }) 
     $Y_CheckAutoPoToken.Add_Unchecked({ $Y_PoToken.IsEnabled = $true; $Y_PoToken.Opacity = 1.0; Update-YtDlpPreview })
@@ -4175,26 +4187,50 @@ $BtnSettings.Add_Click({
                         $LogBox.AppendText("`r`n[ERROR] FFmpeg encountered an error. The process was aborted.`r`n")
                         $exCode = 1
                     }
-                    elseif ($job.IsYtDlp -and ($logText -match "ERROR:" -or $logText -match "Could not find known video or audio" -or $logText -match "Unsupported URL" -or $logText -match "This video is unavailable")) {
+                    elseif ($job.IsYtDlp -and ($logText -match "ERROR:" -or $logText -match "Could not find known video or audio" -or $logText -match "Unsupported URL" -or $logText -match "This video is unavailable" -or $logText -match "Sign in to confirm" -or $logText -match "bot")) {
+                        
+                        # Spezifische Erkennung für Cookie-, Bot- oder Netzwerk-Sperren
+                        $isCookieBlock = ($logText -match "(?i)Sign in to confirm|cookies|bot|400 Bad Request|403 Forbidden")
+
                         if (-not $job.Retried) {
-                            $StatusText.Text = "Updating yt-dlp & Retrying..."
-                            $StatusText.Foreground = "#F59E0B"
-                            $LogBox.AppendText("`r`n[WARNING] Extraction failed. Attempting to auto-update yt-dlp and retry...`r`n")
-                            
-                            # Fire native yt-dlp updater silently to fetch newest YouTube extractors
-                            try { [void](Start-Process cmd.exe -ArgumentList "/c `"$($script:State.ytdlp)`" -U" -Wait -WindowStyle Hidden) } catch {}
-                            
                             $job.Retried = $true
                             $script:State.BatchQueue[$script:State.CurrentJobIndex] = $job
-                            
-                            # Decrement index by 1 so the queue loops back to this exact job
-                            $script:State.CurrentJobIndex--
+                            $script:State.CurrentJobIndex-- # Geht einen Schritt zurück, um den Download neu zu starten
                             $exCode = 0 
+
+                            if ($isCookieBlock) {
+                                $StatusText.Text = "Cookie Blocked! Waiting..."
+                                $StatusText.Foreground = "#F59E0B"
+                                $LogBox.AppendText("`r`n[WARNING] YouTube Cookie/Bot-Block erkannt! Leere yt-dlp Cache...`r`n")
+                                
+                                # Löscht die blockierte Session-Signatur aus dem yt-dlp Cache
+                                try { [void](Start-Process cmd.exe -ArgumentList "/c `"$($script:State.ytdlp)`" --rm-cache-dir" -Wait -WindowStyle Hidden) } catch {}
+                                
+                                [System.Media.SystemSounds]::Exclamation.Play()
+
+                                $browserName = Get-CbVal $Y_CookieBrowser
+                                $msg = "YouTube blockiert den Download (Cookies abgelaufen oder Bot-Schutz aktiv).`n`n" +
+                                       "Auto-Recovery Fix:`n" +
+                                       "1. Öffne deinen eingestellten Browser ($browserName).`n" +
+                                       "2. Gehe auf YouTube und starte kurz irgendein Video.`n" +
+                                       "3. Lass den Browser danach offen und klicke hier auf OK!`n`n" +
+                                       "Das Skript zieht sich nun den frischen Cookie und lädt genau da weiter, wo es gestoppt wurde."
+                                
+                                [void][System.Windows.MessageBox]::Show($msg, "Cookie Auto-Recovery", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+                                
+                                $LogBox.AppendText("[INFO] Setze Download mit frischen Cookies fort...`r`n")
+                            }
+                            else {
+                                $StatusText.Text = "Updating yt-dlp & Retrying..."
+                                $StatusText.Foreground = "#F59E0B"
+                                $LogBox.AppendText("`r`n[WARNING] Extraction failed. Attempting to auto-update yt-dlp and retry...`r`n")
+                                try { [void](Start-Process cmd.exe -ArgumentList "/c `"$($script:State.ytdlp)`" -U" -Wait -WindowStyle Hidden) } catch {}
+                            }
                         }
                         else {
                             $StatusText.Text = "Failed (Extraction Error)"
                             $StatusText.Foreground = "#EF4444"
-                            $LogBox.AppendText("`r`n[ERROR] yt-dlp could not extract media even after an update. URL might be unsupported, protected, or missing a video.`r`n")
+                            $LogBox.AppendText("`r`n[ERROR] yt-dlp konnte das Video nicht extrahieren. Möglicherweise ist das Video privat, gelöscht oder dauerhaft blockiert.`r`n")
                             $exCode = 1
                         }
                     }
@@ -4222,60 +4258,65 @@ $BtnSettings.Add_Click({
 
                         if ($job.IsYtDlp) {
                             try {
-                                $finalFile = $job.OutputFile -replace '\.part$', '' -replace '\.ytdl$', ''
-                                if (-not $finalFile -or -not (Test-Path -LiteralPath $finalFile)) {
-                                    $finalFile = (Get-ChildItem -Path $job.OutputDir -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+                                # Find ALL media files created/modified in output dir since job started (Solves playlist summary issue)
+                                $validExts = @('.mp4','.mkv','.webm','.mp3','.m4a','.flac','.wav','.opus','.aac')
+                                $newFiles = Get-ChildItem -Path $job.OutputDir -File | Where-Object { 
+                                    $_.LastWriteTime -ge $job.JobStart -and 
+                                    $_.Name -notmatch '\.part$|\.ytdl$|\.temp$' -and
+                                    $validExts -contains $_.Extension.ToLower()
                                 }
 
-                                if ($finalFile -and (Test-Path -LiteralPath $finalFile)) {
-                                    $dlTitle = [System.IO.Path]::GetFileNameWithoutExtension($finalFile)
-                                    $dlDur = "Unknown"
-                                    $dlQual = "Audio Only"
+                                if ($null -eq $script:State.YtDlpDownloadedTitles) { $script:State.YtDlpDownloadedTitles = [System.Collections.Generic.List[string]]::new() }
 
-                                    # --- ADDED: Save title to memory for the batch overview ---
-                                    if ($null -eq $script:State.YtDlpDownloadedTitles) { $script:State.YtDlpDownloadedTitles = [System.Collections.Generic.List[string]]::new() }
-                                    $script:State.YtDlpDownloadedTitles.Add($dlTitle)
-                                    # ----------------------------------------------------------
-
-                                    # Only run FFprobe if it actually exists on the system
-                                    if ($script:State.ffprobeFound) {
-                                        $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
-                                        $pinfoDur.FileName = $script:State.ffprobe
-                                        $pinfoDur.Arguments = "-v error -show_entries format=duration:stream=width,height -of json `"$finalFile`""
-                                        $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
-                                        $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-                                        
-                                        $jsonOut = $pDur.StandardOutput.ReadToEnd()
-                                        [void]$pDur.StandardError.ReadToEnd()
-                                        
-                                        if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
-                                        $pDur.Dispose()
+                                if ($newFiles -and $newFiles.Count -gt 0) {
+                                    $LogBox.AppendText("`r`n----------------------------------------`r`n")
+                                    $LogBox.AppendText(" DOWNLOAD SUMMARY ($($newFiles.Count) Files)`r`n")
                                     
-                                        if ($jsonOut) {
-                                            $mediaInfo = $jsonOut | ConvertFrom-Json
-                                            if ($mediaInfo.format.duration) {
-                                                $ts = [TimeSpan]::FromSeconds([double]$mediaInfo.format.duration)
-                                                $dlDur = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
-                                            }
-                                            if ($mediaInfo.streams) {
-                                                $videoStream = $mediaInfo.streams | Where-Object { $_.width } | Select-Object -First 1
-                                                if ($videoStream) {
-                                                    $dlQual = "$($videoStream.width)x$($videoStream.height)"
-                                                    if ($videoStream.height -ge 2160) { $dlQual += " (4K)" }
-                                                    elseif ($videoStream.height -ge 1440) { $dlQual += " (2K)" }
-                                                    elseif ($videoStream.height -ge 1080) { $dlQual += " (1080p)" }
-                                                    elseif ($videoStream.height -ge 720) { $dlQual += " (720p)" }
-                                                }
+                                    foreach ($f in $newFiles) {
+                                        $dlTitle = [System.IO.Path]::GetFileNameWithoutExtension($f.FullName)
+                                        $script:State.YtDlpDownloadedTitles.Add($dlTitle)
+                                        
+                                        $dlDur = "Unknown"
+                                        $dlQual = if ($f.Extension -match "(?i)mp3|m4a|flac|wav|aac|opus") { "Audio Only" } else { "Video" }
+
+                                        if ($script:State.ffprobeFound) {
+                                            $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+                                            $pinfoDur.FileName = $script:State.ffprobe
+                                            $pinfoDur.Arguments = "-v error -show_entries format=duration:stream=width,height -of json `"$($f.FullName)`""
+                                            $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
+                                            $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                                            
+                                            $jsonOut = $pDur.StandardOutput.ReadToEnd()
+                                            [void]$pDur.StandardError.ReadToEnd()
+                                            
+                                            if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
+                                            $pDur.Dispose()
+                                        
+                                            if ($jsonOut) {
+                                                try {
+                                                    $mediaInfo = $jsonOut | ConvertFrom-Json
+                                                    if ($mediaInfo.format.duration) {
+                                                        $ts = [TimeSpan]::FromSeconds([double]$mediaInfo.format.duration)
+                                                        $dlDur = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+                                                    }
+                                                    if ($mediaInfo.streams) {
+                                                        $videoStream = $mediaInfo.streams | Where-Object { $_.width } | Select-Object -First 1
+                                                        if ($videoStream) {
+                                                            $dlQual = "$($videoStream.width)x$($videoStream.height)"
+                                                            if ($videoStream.height -ge 2160) { $dlQual += " (4K)" }
+                                                            elseif ($videoStream.height -ge 1440) { $dlQual += " (2K)" }
+                                                            elseif ($videoStream.height -ge 1080) { $dlQual += " (1080p)" }
+                                                            elseif ($videoStream.height -ge 720) { $dlQual += " (720p)" }
+                                                        }
+                                                    }
+                                                } catch {}
                                             }
                                         }
+                                        $LogBox.AppendText(" -> $dlTitle [$dlDur | $dlQual]`r`n")
                                     }
-
-                                    $LogBox.AppendText("`r`n----------------------------------------`r`n")
-                                    $LogBox.AppendText(" DOWNLOAD SUMMARY`r`n")
-                                    $LogBox.AppendText(" Title:   $dlTitle`r`n")
-                                    $LogBox.AppendText(" Time:    $dlDur`r`n")
-                                    $LogBox.AppendText(" Quality: $dlQual`r`n")
                                     $LogBox.AppendText("----------------------------------------`r`n")
+                                } else {
+                                    $LogBox.AppendText("`r`n[INFO] No new media files were processed (Files may have been skipped or archive active).`r`n")
                                 }
                             }
                             catch {}
@@ -5502,6 +5543,7 @@ $BtnSettings.Add_Click({
             if ($null -ne $Y_CheckMeta) { $Y_CheckMeta.IsChecked = $true }
             if ($null -ne $Y_CheckSubs) { $Y_CheckSubs.IsChecked = $false }
             if ($null -ne $Y_CheckSponsor) { $Y_CheckSponsor.IsChecked = $false }
+            if ($null -ne $Y_CheckResume) { $Y_CheckResume.IsChecked = $true }
             if ($null -ne $Y_CheckCookie) { $Y_CheckCookie.IsChecked = $false }
             if ($null -ne $Y_CheckAutoPoToken) { $Y_CheckAutoPoToken.IsChecked = $false }
             if ($null -ne $Y_PoToken) { $Y_PoToken.IsEnabled = $true; $Y_PoToken.Opacity = 1.0 }
