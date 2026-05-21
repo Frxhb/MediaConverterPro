@@ -4269,52 +4269,70 @@ $BtnSettings.Add_Click({
                                 if ($null -eq $script:State.YtDlpDownloadedTitles) { $script:State.YtDlpDownloadedTitles = [System.Collections.Generic.List[string]]::new() }
 
                                 if ($newFiles -and $newFiles.Count -gt 0) {
-                                    $LogBox.AppendText("`r`n----------------------------------------`r`n")
-                                    $LogBox.AppendText(" DOWNLOAD SUMMARY ($($newFiles.Count) Files)`r`n")
-                                    
+                                    # Dictionary zur Deduplizierung: Pfad als Key
+                                    $uniqueFiles = [System.Collections.Generic.Dictionary[string, System.IO.FileInfo]]::new()
                                     foreach ($f in $newFiles) {
-                                        $dlTitle = [System.IO.Path]::GetFileNameWithoutExtension($f.FullName)
-                                        $script:State.YtDlpDownloadedTitles.Add($dlTitle)
-                                        
-                                        $dlDur = "Unknown"
-                                        $dlQual = if ($f.Extension -match "(?i)mp3|m4a|flac|wav|aac|opus") { "Audio Only" } else { "Video" }
-
-                                        if ($script:State.ffprobeFound) {
-                                            $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
-                                            $pinfoDur.FileName = $script:State.ffprobe
-                                            $pinfoDur.Arguments = "-v error -show_entries format=duration:stream=width,height -of json `"$($f.FullName)`""
-                                            $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
-                                            $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
-                                            
-                                            $jsonOut = $pDur.StandardOutput.ReadToEnd()
-                                            [void]$pDur.StandardError.ReadToEnd()
-                                            
-                                            if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
-                                            $pDur.Dispose()
-                                        
-                                            if ($jsonOut) {
-                                                try {
-                                                    $mediaInfo = $jsonOut | ConvertFrom-Json
-                                                    if ($mediaInfo.format.duration) {
-                                                        $ts = [TimeSpan]::FromSeconds([double]$mediaInfo.format.duration)
-                                                        $dlDur = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
-                                                    }
-                                                    if ($mediaInfo.streams) {
-                                                        $videoStream = $mediaInfo.streams | Where-Object { $_.width } | Select-Object -First 1
-                                                        if ($videoStream) {
-                                                            $dlQual = "$($videoStream.width)x$($videoStream.height)"
-                                                            if ($videoStream.height -ge 2160) { $dlQual += " (4K)" }
-                                                            elseif ($videoStream.height -ge 1440) { $dlQual += " (2K)" }
-                                                            elseif ($videoStream.height -ge 1080) { $dlQual += " (1080p)" }
-                                                            elseif ($videoStream.height -ge 720) { $dlQual += " (720p)" }
-                                                        }
-                                                    }
-                                                } catch {}
-                                            }
+                                        if (-not $uniqueFiles.ContainsKey($f.FullName)) {
+                                            $uniqueFiles.Add($f.FullName, $f)
                                         }
-                                        $LogBox.AppendText(" -> $dlTitle [$dlDur | $dlQual]`r`n")
                                     }
-                                    $LogBox.AppendText("----------------------------------------`r`n")
+
+                                    $finalFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+                                    foreach ($f in $uniqueFiles.Values) {
+                                        $dlTitle = [System.IO.Path]::GetFileNameWithoutExtension($f.FullName)
+                                        # Nur hinzufügen, wenn der Titel noch nicht in der Sitzung gelistet wurde
+                                        if (-not $script:State.YtDlpDownloadedTitles.Contains($dlTitle)) {
+                                            $script:State.YtDlpDownloadedTitles.Add($dlTitle)
+                                            $finalFiles.Add($f)
+                                        }
+                                    }
+
+                                    if ($finalFiles.Count -gt 0) {
+                                        $LogBox.AppendText("`r`n----------------------------------------`r`n")
+                                        $LogBox.AppendText(" DOWNLOAD SUMMARY ($($finalFiles.Count) NEW Files)`r`n")
+                                        
+                                        foreach ($f in $finalFiles) {
+                                            $dlTitle = [System.IO.Path]::GetFileNameWithoutExtension($f.FullName)
+                                            $dlDur = "Unknown"
+                                            $dlQual = if ($f.Extension -match "(?i)mp3|m4a|flac|wav|aac|opus") { "Audio Only" } else { "Video" }
+
+                                            if ($script:State.ffprobeFound) {
+                                                $pinfoDur = New-Object System.Diagnostics.ProcessStartInfo
+                                                $pinfoDur.FileName = $script:State.ffprobe
+                                                $pinfoDur.Arguments = "-v error -show_entries format=duration:stream=width,height -of json `"$($f.FullName)`""
+                                                $pinfoDur.UseShellExecute = $false; $pinfoDur.RedirectStandardOutput = $true; $pinfoDur.RedirectStandardError = $true; $pinfoDur.CreateNoWindow = $true
+                                                $pDur = [System.Diagnostics.Process]::Start($pinfoDur)
+                                                
+                                                $jsonOut = $pDur.StandardOutput.ReadToEnd()
+                                                [void]$pDur.StandardError.ReadToEnd()
+                                                
+                                                if (-not $pDur.WaitForExit(3000)) { try { $pDur.Kill() } catch {} }
+                                                $pDur.Dispose()
+                                            
+                                                if ($jsonOut) {
+                                                    try {
+                                                        $mediaInfo = $jsonOut | ConvertFrom-Json
+                                                        if ($mediaInfo.format.duration) {
+                                                            $ts = [TimeSpan]::FromSeconds([double]$mediaInfo.format.duration)
+                                                            $dlDur = "{0:D2}:{1:D2}:{2:D2}" -f $ts.Hours, $ts.Minutes, $ts.Seconds
+                                                        }
+                                                        if ($mediaInfo.streams) {
+                                                            $videoStream = $mediaInfo.streams | Where-Object { $_.width } | Select-Object -First 1
+                                                            if ($videoStream) {
+                                                                $dlQual = "$($videoStream.width)x$($videoStream.height)"
+                                                                if ($videoStream.height -ge 2160) { $dlQual += " (4K)" }
+                                                                elseif ($videoStream.height -ge 1440) { $dlQual += " (2K)" }
+                                                                elseif ($videoStream.height -ge 1080) { $dlQual += " (1080p)" }
+                                                                elseif ($videoStream.height -ge 720) { $dlQual += " (720p)" }
+                                                            }
+                                                        }
+                                                    } catch {}
+                                                }
+                                            }
+                                            $LogBox.AppendText(" -> $dlTitle [$dlDur | $dlQual]`r`n")
+                                        }
+                                        $LogBox.AppendText("----------------------------------------`r`n")
+                                    }
                                 } else {
                                     $LogBox.AppendText("`r`n[INFO] No new media files were processed (Files may have been skipped or archive active).`r`n")
                                 }
